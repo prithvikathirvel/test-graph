@@ -1,0 +1,32 @@
+{
+    "servers": [
+        {
+            "server_id": "filesystem",
+            "name": "File System Operations",
+            "transport_type": "stdio",
+            "connection_params": {
+                "command": "npx",
+                "args": [
+                    "-y",
+                    "@modelcontextprotocol/server-filesystem",
+                    "./"
+                ],
+                "env": {}
+            },
+            "enabled": true,
+            "timeout": 30,
+            "max_retries": 3
+        },
+        {
+            "server_id": "infrastructure",
+            "name": "Infrastructure Management Tools",
+            "transport_type": "sse",
+            "connection_params": {
+                "url": "http://localhost:8050/integration/sse"
+            },
+            "enabled": true,
+            "timeout": 30,
+            "max_retries": 3
+        }
+    ]
+}
