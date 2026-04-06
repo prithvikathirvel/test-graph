@@ -37,6 +37,9 @@ import app.nodes.classifiers
 import app.nodes.logic
 import app.nodes.mcp_node
 
+from app.core.logger import setup_logging, trace_ctx
+
+setup_logging()
 logger = logging.getLogger(__name__)
 
 # ==========================================
@@ -48,7 +51,7 @@ async def lifespan(app: FastAPI):
     checkpointer = MongoDBSaver(
         client=mongo_client,
         db_name=getattr(settings, "MONGO_DB_NAME", "agent_studio"),
-        collection_name=getattr(settings, "MONGO_COLLECTION_NAME", "checkpoints")
+        collection_name=getattr(settings, "MONGO_CHECKPOINTER_COLLECTION_NAME", "checkpoints")
     )
     
     voice_service = UniversalVoiceService()
@@ -299,11 +302,13 @@ async def unexpose_flow(agent_id: str, request: Request):
 # ==========================================
 # 7. MAIN INVOCATION ROUTES
 # ==========================================
-@app.post("/invoke", tags=["Agent Flows"])
+@app.post("/agents/invoke/{agent_id}", tags=["Agent Flows"])
 
-async def invoke(req: InvokeReq, request: Request):
+async def invoke(agent_id: str, req: InvokeReq, request: Request):
+    trace_ctx.set(f"flow:{req.thread_id[-6:]}")
+    logger.info(f"Starting new invocation for agent: {req.agent_id}")
     try:
-        graph, schema = await get_and_compile_graph(req.agent_id, request)
+        graph, schema = await get_and_compile_graph(agent_id, request)
 
         variables = {}
         for inp in schema.get("inputs", []):
@@ -341,11 +346,13 @@ async def invoke(req: InvokeReq, request: Request):
         logger.error(f"Invoke Error: {str(e)}")
         raise HTTPException(status_code=500, detail=str(e))
 
-@app.post("/resume", tags=["Agent Flows"])
+@app.post("/agents/resume/{agent_id}", tags=["Agent Flows"])
 
-async def resume(req: ResumeReq, request: Request):
+async def resume(agent_id: str, req: ResumeReq, request: Request):
+    trace_ctx.set(f"flow:{req.thread_id[-6:]}") 
+    logger.info(f"Resuming flow from node: {req.node_id}")
     try:
-        graph, schema = await get_and_compile_graph(req.agent_id, request)
+        graph, schema = await get_and_compile_graph(agent_id, request)
         
         user_response = req.user_response
         if req.voice_enabled and req.userInput and req.userInput.voiceInput:

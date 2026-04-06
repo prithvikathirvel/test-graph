@@ -55,7 +55,7 @@ def save_conversation_turn(mongo_client, session_id: str, thread_id: str, user_m
             upsert=True  # Create it if it doesn't exist!
         )
         
-        logger.info(f"✅ Appended memory to session: {session_id}")
+        # logger.info(f"✅ Appended memory to session: {session_id}")
         
     except Exception as e:
         logger.error(f"❌ Failed to save conversation memory: {e}")

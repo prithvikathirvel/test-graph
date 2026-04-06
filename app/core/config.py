@@ -3,7 +3,7 @@ from pydantic_settings import BaseSettings
 class Settings(BaseSettings):
     MONGO_URI: str = "mongodb://localhost:27017"
     MONGO_DB_NAME: str = "agent_studio"
-    MONGO_COLLECTION_NAME: str = "langgraph_checkpoints"
+    MONGO_CHECKPOINTER_COLLECTION_NAME: str = "langgraph_checkpoints"
     SCHEMA_API_URL: str = "https://apidev.sifymodernization.digital/ai/api/agent-studio/agent-flow/"
     SMTP_USER : str = "[EMAIL_ADDRESS]"
     SMTP_PASSWORD : str = ""

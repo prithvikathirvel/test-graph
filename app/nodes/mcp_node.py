@@ -7,7 +7,7 @@ from app.core.model import MCPToolCall
 
 logger = logging.getLogger(__name__)
 
-@NodeRegistry.register("MCP Tool Caller")
+@NodeRegistry.register("MCP Tool")
 async def mcp_tool_caller_node(state: FlowState, node_config: dict) -> dict:
     """Executes a tool on an external MCP Server."""
     inputs = {p["key"]: p["value"] for p in node_config.get("inputParameters", [])}

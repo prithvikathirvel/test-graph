@@ -2,6 +2,8 @@ import os
 import json
 import logging
 from typing import Dict, Any
+from contextlib import AsyncExitStack
+
 from mcp.client.stdio import stdio_client, StdioServerParameters
 from mcp.client.sse import sse_client
 from mcp import ClientSession
@@ -16,7 +18,9 @@ class UnifiedMCPClient:
         self.servers: Dict[str, MCPServerConfig] = {}
         self.active_sessions: Dict[str, ClientSession] = {}
         self.server_tools: Dict[str, list] = {}
-        self._session_managers = {}
+        
+        # 🚀 FIX: AsyncExitStack safely manages background connections
+        self.exit_stack = AsyncExitStack()
 
     async def load_from_json(self, filepath: str = "mcpServers.json"):
         """Loads external MCP servers on startup."""
@@ -54,14 +58,14 @@ class UnifiedMCPClient:
                 logger.error(f"Unsupported transport: {config.transport_type}")
                 return False
 
-            # Initialize Connection
-            read, write = await session_manager.__aenter__()
+            # 🚀 FIX: Use enter_async_context to safely lock the connections in memory
+            read, write = await self.exit_stack.enter_async_context(session_manager)
             session = ClientSession(read, write)
-            await session.__aenter__()
+            await self.exit_stack.enter_async_context(session)
+            
             await session.initialize()
             
             self.active_sessions[config.server_id] = session
-            self._session_managers[config.server_id] = session_manager
             
             # Cache tools
             tools_response = await session.list_tools()
@@ -87,11 +91,11 @@ class UnifiedMCPClient:
             return {"error": str(e), "success": False}
 
     async def close_all(self):
-        for sid, session in self.active_sessions.items():
-            await session.__aexit__(None, None, None)
-            if sid in self._session_managers:
-                await self._session_managers[sid].__aexit__(None, None, None)
-        logger.info("🛑 All MCP Sessions closed.")
+        # 🚀 FIX: A single command perfectly unwinds and destroys all connections securely.
+        await self.exit_stack.aclose()
+        self.active_sessions.clear()
+        self.server_tools.clear()
+        logger.info("🛑 All MCP Sessions closed securely.")
 
 # Singleton Instance
 mcp_client_manager = UnifiedMCPClient()

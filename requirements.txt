@@ -24,3 +24,5 @@ piper-tts
 mcp
 httpx
 langchain_google_genai
+fpdf2 
+python-docx
