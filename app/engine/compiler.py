@@ -55,6 +55,7 @@ class GraphCompiler:
             # Ensure "Iterator Node" and "Decision Node" names map correctly to the registry
             if node["type"] == "iterator": executor_name = "Iterator Node"
             if node["type"] == "conditions": executor_name = "Decision Node"
+            if node["type"] == "agentflow": executor_name = "Agent Flow Node"
 
             executor = NodeRegistry.get_executor(executor_name)
             bound_executor = partial(executor, node_config=node)

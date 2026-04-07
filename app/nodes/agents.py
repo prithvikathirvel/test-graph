@@ -174,7 +174,7 @@ async def llm_invoker_node(state: FlowState, node_config: dict) -> dict:
                 "user_query": user_query
             })
             
-            final_text = response.content
+            final_text = response.content  
             new_vars = {}
             
             try:
