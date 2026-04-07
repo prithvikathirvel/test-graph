@@ -1,7 +1,10 @@
 import os
 import json
+import uuid
 import logging
-from typing import Dict, Any
+import datetime
+from typing import Dict, Any, List
+
 from contextlib import AsyncExitStack
 
 from mcp.client.stdio import stdio_client, StdioServerParameters
@@ -10,6 +13,17 @@ from mcp import ClientSession
 from app.core.model import MCPServerConfig, MCPToolCall, MCPTransportType
 
 logger = logging.getLogger(__name__)
+
+# Default values per JSON Schema type
+_TYPE_DEFAULTS = {
+    "string": "",
+    "number": 0,
+    "integer": 0,
+    "boolean": False,
+    "array": [],
+    "object": {},
+}
+
 
 class UnifiedMCPClient:
     """Manages connections to external MCP Servers (Filesystem, Infrastructure)."""
@@ -89,6 +103,66 @@ class UnifiedMCPClient:
         except Exception as e:
             logger.error(f"MCP Tool Error [{call.tool_name}]: {e}")
             return {"error": str(e), "success": False}
+
+    def list_server_tools(self, server_id: str) -> List[Dict[str, Any]]:
+        """Transform raw MCP Tool objects into the standardized Agent Studio node schema."""
+        if server_id not in self.server_tools:
+            return []
+
+        now = datetime.datetime.utcnow().isoformat() + "Z"
+        transformed = []
+
+        for tool in self.server_tools[server_id]:
+            schema = getattr(tool, "inputSchema", {}) or {}
+            props = schema.get("properties", {})
+
+            # Build arguments object with defaults from the tool's input schema
+            arguments_value = {}
+            for key, details in props.items():
+                param_type = details.get("type", "string")
+                arguments_value[key] = details.get(
+                    "default", _TYPE_DEFAULTS.get(param_type, "")
+                )
+
+            # Standardized input parameters matching Agent Studio node format
+            input_params = [
+                {"key": "server_id", "value": server_id, "type": "text"},
+                {"key": "tool_name", "value": tool.name, "type": "text"},
+                {"key": "arguments", "value": arguments_value, "type": "object"},
+                {"key": "timeout", "value": 30, "type": "number"},
+            ]
+
+            transformed.append({
+                "id": str(uuid.uuid4()),
+                "name": tool.name,
+                "displayName": tool.name,
+                "type": "MCP Tool",
+                "tags": ["Run tools from MCP servers", "External tools caller"],
+                "description": f"Runs the {tool.name} tool from MCP Server. {tool.description or ''}",
+                "specifications": {
+                    "original_schema": schema,
+                    "server_id": server_id,
+                },
+                "inputParameters": input_params,
+                "outputParameters": [
+                    {"key": "output", "value": "tool_execution_result", "type": "object"}
+                ],
+                "status": True,
+                "version": "1.0.0",
+                "isPublic": True,
+                "isActive": True,
+                "createdAt": now,
+                "updatedAt": now,
+            })
+
+        return transformed
+
+    def get_all_tools(self) -> Dict[str, List[Dict[str, Any]]]:
+        """Return all tools grouped by server_id in the standardized schema."""
+        return {
+            sid: self.list_server_tools(sid)
+            for sid in self.server_tools
+        }
 
     async def close_all(self):
         # 🚀 FIX: A single command perfectly unwinds and destroys all connections securely.

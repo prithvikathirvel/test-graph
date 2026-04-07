@@ -1,5 +1,6 @@
 from langgraph.graph import StateGraph, START, END
 from functools import partial
+import json
 import logging
 from app.core.state import FlowState
 from app.engine.registry import NodeRegistry
@@ -28,7 +29,43 @@ def iterator_router(state: FlowState, node_config: dict) -> str:
         return node_config.get("completePath") or node_config.get("completionPath", "__END__")
 
 
-# --- GRAPH COMPILER ---
+# --- NODE OUTPUT LOGGER ---
+
+def _truncate(value, max_len=200):
+    """Truncate large values for readable logs."""
+    s = str(value)
+    return s if len(s) <= max_len else s[:max_len] + f"… ({len(s)} chars)"
+
+
+def _make_logged_executor(bound_executor, node_config: dict):
+    """Wraps a node executor to log its output after every execution."""
+    display = node_config.get("displayName") or node_config.get("name", "Unknown")
+    node_id = node_config.get("node_id", "?")
+
+    async def _logged(state, **kwargs):
+        logger.info(f"▶️  [{display}] (id={node_id}) — executing…")
+        try:
+            result = await bound_executor(state, **kwargs)
+        except Exception as exc:
+            logger.error(f"❌ [{display}] (id={node_id}) — raised {type(exc).__name__}: {exc}")
+            raise
+
+        # --- Log output variables ---
+        out_vars = result.get("variables", {}) if isinstance(result, dict) else {}
+        if out_vars:
+            for key, val in out_vars.items():
+                logger.info(f"   📤 [{display}]  {key} = {_truncate(val)}")
+        else:
+            logger.info(f"   📤 [{display}]  (no output variables)")
+
+        # --- Log message count ---
+        msgs = result.get("messages", []) if isinstance(result, dict) else []
+        if msgs:
+            logger.info(f"   💬 [{display}]  +{len(msgs)} message(s)")
+
+        return result
+
+    return _logged
 
 class GraphCompiler:
     def __init__(self, schema: dict, checkpointer=None):
@@ -59,7 +96,8 @@ class GraphCompiler:
 
             executor = NodeRegistry.get_executor(executor_name)
             bound_executor = partial(executor, node_config=node)
-            self.workflow.add_node(node["node_id"], bound_executor)
+            logged_executor = _make_logged_executor(bound_executor, node)
+            self.workflow.add_node(node["node_id"], logged_executor)
 
         # 2. WIRE DECISION NODES
         for dec_node in decision_nodes.values():

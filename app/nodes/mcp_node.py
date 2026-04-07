@@ -1,3 +1,4 @@
+import json
 import logging
 from app.engine.registry import NodeRegistry
 from app.utils.templating import resolve_placeholders
@@ -15,6 +16,14 @@ async def mcp_tool_caller_node(state: FlowState, node_config: dict) -> dict:
     server_id = resolve_placeholders(inputs.get("server_id"), state["variables"])
     tool_name = resolve_placeholders(inputs.get("tool_name"), state["variables"])
     arguments = resolve_placeholders(inputs.get("arguments", {}), state["variables"])
+
+    # Handle case where arguments resolves to a string repr of a dict
+    if isinstance(arguments, str):
+        try:
+            arguments = json.loads(arguments.replace("'", '"'))
+        except (json.JSONDecodeError, ValueError):
+            logger.warning(f"⚠️ MCP arguments is a string but not valid JSON: {arguments[:200]}")
+            arguments = {}
     
     out_params = node_config.get("outputParameters", [])
     output_key = out_params[0]["value"] if out_params else "mcp_result"
@@ -22,7 +31,7 @@ async def mcp_tool_caller_node(state: FlowState, node_config: dict) -> dict:
     if not server_id or not tool_name:
         return {"variables": {output_key: {"error": "Missing server_id or tool_name"}}}
 
-    logger.info(f"🔧 Firing MCP Tool: {server_id} -> {tool_name}")
+    logger.info(f"🔧 Firing MCP Tool: {server_id} -> {tool_name} with args: {arguments}")
     call_req = MCPToolCall(server_id=server_id, tool_name=tool_name, arguments=arguments)
     
     result = await mcp_client_manager.call_tool(call_req)

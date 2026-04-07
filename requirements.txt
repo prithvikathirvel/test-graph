@@ -26,3 +26,7 @@ httpx
 langchain_google_genai
 fpdf2 
 python-docx
+langchain-community 
+sqlalchemy
+psycopg2-binary
+PyMySQL

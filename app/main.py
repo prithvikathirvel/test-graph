@@ -40,6 +40,8 @@ import app.nodes.classifiers
 import app.nodes.logic
 import app.nodes.mcp_node
 import app.nodes.agent_flow
+import app.nodes.db_chat
+import app.nodes.react_agent
 
 from app.core.logger import setup_logging, trace_ctx
 import uuid
@@ -252,10 +254,16 @@ async def register_mcp_server(config: MCPServerConfig):
 @app.get("/mcp/tools", tags=["MCP"])
 
 async def list_mcp_tools():
-    grouped = {}
-    for sid, tools in mcp_client_manager.server_tools.items():
-        grouped[sid] = [{"name": t.name, "description": t.description} for t in tools]
-    return JSONResponse(content=grouped)
+    """List all tools grouped by MCP server in the standardized Agent Studio node schema."""
+    try:
+        grouped = mcp_client_manager.get_all_tools()
+        return JSONResponse(content=grouped)
+    except Exception as e:
+        logger.exception("Error listing all MCP tools")
+        return JSONResponse(
+            content={"error": str(e)},
+            status_code=500,
+        )
 
 
 # ==========================================

@@ -22,6 +22,9 @@ def resolve_placeholders(data: Any, variables: dict) -> Any:
             
             if len(vars_in_string) == 1 and data.strip() == f"{{{{{vars_in_string.copy().pop()}}}}}":
                 var_name = data.replace("{{", "").replace("}}", "").strip()
+                # Direct lookup for simple names (no dots) to preserve type (dict/list)
+                if "." not in var_name and var_name in variables:
+                    return variables[var_name]
                 return _resolve_dot_notation(var_name, variables)
 
             # 2. Otherwise, it's a mixed string (e.g., "Hello {{user.name}}!")
