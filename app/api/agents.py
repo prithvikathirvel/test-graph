@@ -24,6 +24,7 @@ router = APIRouter(tags=["Agent Flows"])
 @router.get("/agents/flows")
 async def list_agent_flows(request: Request):
     """List all available agent flows with their required input parameters."""
+    logger.debug("Listing all available agent flows.")
     try:
         db_name = getattr(settings, "MONGO_DB_NAME", "agent_studio")
         db = request.app.state.mongo_client[db_name]
@@ -74,6 +75,7 @@ async def list_agent_flows(request: Request):
 @router.get("/agents/flows/{agent_id}")
 async def get_agent_flow_detail(agent_id: str, request: Request):
     """Get detailed info for a single agent flow."""
+    logger.debug(f"Fetching detail for agent flow: {agent_id}")
     try:
         schema = await fetch_schema_by_agent_id(agent_id)
         inputs = schema.get("inputs", [])
@@ -106,7 +108,9 @@ async def get_agent_flow_detail(agent_id: str, request: Request):
 @router.post("/agents/invoke/{agent_id}")
 async def invoke(agent_id: str, req: InvokeReq, request: Request):
     trace_ctx.set(f"flow:{req.thread_id[-6:]}")
-    logger.info(f"Starting new invocation for agent: {agent_id}")
+    logger.info(f"▶️ Starting new invocation for agent: {agent_id} (Thread: {req.thread_id})")
+    logger.debug(f"Invoke Params - User: {req.user_id}, Session: {req.session_id}, Voice: {req.voice_enabled}")
+    
     try:
         graph, schema = await get_and_compile_graph(agent_id, request)
 
@@ -120,7 +124,9 @@ async def invoke(agent_id: str, req: InvokeReq, request: Request):
             if should_run_stt(v_config, has_voice=True):
                 voice_svc: UniversalVoiceService = request.app.state.voice_service
                 provider = v_config.get("stt_provider", "whisper")
+                logger.info(f"Processing STT via {provider}...")
                 user_message = await voice_svc.process_stt(req.userInput.voiceInput, provider)
+                logger.debug(f"STT Result: {user_message}")
 
         if user_message:
             variables["CHAT_QUERY"] = user_message
@@ -133,22 +139,25 @@ async def invoke(agent_id: str, req: InvokeReq, request: Request):
         }
         config = {"configurable": {"thread_id": req.thread_id}, "recursion_limit": 150}
 
+        logger.debug(f"Entering graph execution for {agent_id}")
         result = await graph.ainvoke(initial_state, config=config)
         snapshot = graph.get_state(config)
         
         if snapshot.next:
             interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
+            logger.info(f"⏸️ Flow '{agent_id}' PAUSED for input at: {snapshot.next}")
             return await format_exact_response("PAUSED", result, req, request, interrupt_data)
-            
+        
+        logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully.")
         return await format_exact_response("COMPLETED", result, req, request)
     except Exception as e:
-        logger.error(f"Invoke Error: {str(e)}")
+        logger.error(f"❌ Invoke Error for {agent_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/agents/resume/{agent_id}")
 async def resume(agent_id: str, req: ResumeReq, request: Request):
     trace_ctx.set(f"flow:{req.thread_id[-6:]}") 
-    logger.info(f"Resuming flow from node: {req.node_id}")
+    logger.info(f"🔄 Resuming flow '{agent_id}' from node: {req.node_id}")
     try:
         graph, _ = await get_and_compile_graph(agent_id, request)
         
@@ -158,17 +167,22 @@ async def resume(agent_id: str, req: ResumeReq, request: Request):
             if should_run_stt(v_config, has_voice=True):
                 voice_svc: UniversalVoiceService = request.app.state.voice_service
                 provider = v_config.get("stt_provider", "whisper")
+                logger.info(f"Processing STT via {provider}...")
                 user_response = await voice_svc.process_stt(req.userInput.voiceInput, provider)
+                logger.debug(f"STT Result: {user_response}")
 
         config = {"configurable": {"thread_id": req.thread_id}}
+        logger.debug(f"Resuming graph execution for thread: {req.thread_id}")
         result = await graph.ainvoke(Command(resume=user_response), config=config)
         snapshot = graph.get_state(config)
         
         if snapshot.next:
             interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
+            logger.info(f"⏸️ Flow '{agent_id}' PAUSED again at: {snapshot.next}")
             return await format_exact_response("PAUSED", result, req, request, interrupt_data, final_user_message=user_response)
-            
+        
+        logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully after resumption.")
         return await format_exact_response("COMPLETED", result, req, request, final_user_message=user_response)
     except Exception as e:
-        logger.error(f"Resume Error: {str(e)}")
+        logger.error(f"❌ Resume Error for {agent_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))

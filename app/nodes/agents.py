@@ -107,13 +107,18 @@ async def llm_invoker_node(state: FlowState, node_config: dict) -> dict:
     raw_prompt = inputs.get("Prompt", "You are a helpful assistant.")
     system_prompt = resolve_placeholders(raw_prompt, state["variables"])
     user_query = str(state["variables"].get(user_msg_key, "")).strip()
+    
+    logger.debug(f"Resolved System Prompt (len={len(system_prompt)})")
+    logger.debug(f"User Query: '{user_query[:50]}...'")
 
     # 3. Trim History
     all_messages = state.get("messages", [])
     recent_chat_history = all_messages[-(memory_window * 2):] if memory_window > 0 and len(all_messages) > 0 else []
+    logger.debug(f"Context: {len(recent_chat_history)} messages in history window.")
 
     # 4. Initialize LLM
     try:
+        logger.info(f"Model selection: {model_choice} (Format: {response_format})")
         llm = _get_llm("gemini-2.5-flash")
     except Exception as e:
         logger.error(f"❌ Failed to initialize LLM: {e}")
@@ -135,11 +140,13 @@ async def llm_invoker_node(state: FlowState, node_config: dict) -> dict:
             
             chain = prompt | llm.with_structured_output(ChattyResponse)
             
+            logger.debug("Executing structured LLM call (Chatty Mode)...")
             response_obj: ChattyResponse = await chain.ainvoke({
                 "system_prompt_var": system_prompt, 
                 "chat_history": recent_chat_history, 
                 "user_query": user_query
             })
+            logger.info(f"LLM Response Intention: {response_obj.intent}")
 
             result_dict = {
                 "message": response_obj.message,
@@ -167,7 +174,7 @@ async def llm_invoker_node(state: FlowState, node_config: dict) -> dict:
                 ("human", "{user_query}")
             ])
             
-            chain = prompt | llm
+            logger.debug(f"Executing standard LLM call (Format: {response_format})...")
             response = await chain.ainvoke({
                 "system_prompt_var": system_prompt,
                 "chat_history": recent_chat_history,
@@ -175,6 +182,7 @@ async def llm_invoker_node(state: FlowState, node_config: dict) -> dict:
             })
             
             final_text = response.content  
+            logger.debug(f"Received LLM response (len={len(final_text)})")
             new_vars = {}
             
             try:

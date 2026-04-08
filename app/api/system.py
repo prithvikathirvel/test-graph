@@ -1,5 +1,6 @@
 import os
 import logging
+from typing import Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse, HTMLResponse
 
@@ -63,9 +64,11 @@ async def health_check():
 
 @router.get("/api/logs", tags=["Admin"])
 async def get_logs_api(limit: int = 500):
+    logger.debug(f"System Log Request: Fetching last {limit} lines.")
     log_path = os.path.join(os.getcwd(), "logs", "app.log")
     try:
         if not os.path.exists(log_path):
+            logger.warning("Log file not found at logs/app.log")
             return JSONResponse(content={"error": "Log file not found"}, status_code=404)
             
         with open(log_path, "r") as f:
@@ -80,6 +83,7 @@ async def get_logs_api(limit: int = 500):
                 else:
                     parsed.append(entry)
             
+            logger.debug(f"Successfully retrieved {len(parsed)} log entries.")
             # Return logs in chronological order for the tail-style UI
             return JSONResponse(content={"logs": parsed})
     except Exception as e:
@@ -387,6 +391,27 @@ async def get_logs_ui():
 </html>
     """
     return HTMLResponse(content=html_content)
+
+@router.post("/system/checkpoints/clear", tags=["Admin"])
+async def clear_checkpoints(request: Request, thread_id: Optional[str] = None):
+    """Admin tool to wipe thread history."""
+    logger.info(f"System Action: Clearing checkpoints. Thread filter: {thread_id or 'ALL'}")
+    try:
+        db_name = getattr(settings, "MONGO_DB_NAME", "agent_studio")
+        collection_name = getattr(settings, "MONGO_CHECKPOINTER_COLLECTION_NAME", "checkpoints")
+        db = request.app.state.mongo_client[db_name]
+        collection = db[collection_name]
+
+        query = {}
+        if thread_id:
+            query = {"thread_id": thread_id}
+        
+        result = collection.delete_many(query)
+        logger.info(f"Successfully deleted {result.deleted_count} checkpoints.")
+        return JSONResponse(content={"success": True, "deleted_count": result.deleted_count})
+    except Exception as e:
+        logger.error(f"Failed to clear checkpoints: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/dynamic-flow", tags=["Agent Flows"])
 async def dynamic_flow_api(req: DynamicFlowReq, request: Request):

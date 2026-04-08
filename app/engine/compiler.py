@@ -54,14 +54,14 @@ def _make_logged_executor(bound_executor, node_config: dict):
         out_vars = result.get("variables", {}) if isinstance(result, dict) else {}
         if out_vars:
             for key, val in out_vars.items():
-                logger.info(f"   📤 [{display}]  {key} = {_truncate(val)}")
+                logger.debug(f"   out | {key} = {_truncate(val)}")
         else:
-            logger.info(f"   📤 [{display}]  (no output variables)")
+            logger.debug("   out | (no output variables)")
 
         # --- Log message count ---
         msgs = result.get("messages", []) if isinstance(result, dict) else []
         if msgs:
-            logger.info(f"   💬 [{display}]  +{len(msgs)} message(s)")
+            logger.info(f"   msg | +{len(msgs)} message(s) added.")
 
         return result
 
@@ -74,8 +74,11 @@ class GraphCompiler:
         self.workflow = StateGraph(FlowState)
 
     def build(self):
+        logger.info("Building state graph from schema...")
         nodes = self.schema.get("graphSpec", {}).get("nodes", [])
         edges = self.schema.get("graphSpec", {}).get("edges", [])
+
+        logger.debug(f"Graph Schema Specs: {len(nodes)} nodes, {len(edges)} edges identified.")
 
         start_node_id = next((n["node_id"] for n in nodes if n["type"] == "start"), None)
         end_node_ids = [n["node_id"] for n in nodes if n["type"] in ["output", "outputs"] or "End Node" in n["name"]]
@@ -132,6 +135,7 @@ class GraphCompiler:
         # 4. WIRE STANDARD EDGES
         for edge in edges:
             source, target = edge["from"], edge["to"]
+            logger.debug(f"Wiring edge: {source} -> {target}")
             
             if source == start_node_id:
                 self.workflow.add_edge(START, target)

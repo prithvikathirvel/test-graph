@@ -29,10 +29,14 @@ async def mcp_tool_caller_node(state: FlowState, node_config: dict) -> dict:
     output_key = out_params[0]["value"] if out_params else "mcp_result"
 
     if not server_id or not tool_name:
+        logger.warning(f"⚠️ MCP Tool call skipped: missing server_id ({server_id}) or tool_name ({tool_name})")
         return {"variables": {output_key: {"error": "Missing server_id or tool_name"}}}
 
-    logger.info(f"🔧 Firing MCP Tool: {server_id} -> {tool_name} with args: {arguments}")
+    logger.info(f"🔧 MCP | {server_id} | calling {tool_name}...")
+    logger.debug(f"MCP Args: {arguments}")
     call_req = MCPToolCall(server_id=server_id, tool_name=tool_name, arguments=arguments)
     
     result = await mcp_client_manager.call_tool(call_req)
+    logger.debug(f"MCP Result Received (success={result.get('success', False)})")
+    
     return {"variables": {output_key: result}}

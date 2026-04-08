@@ -1,6 +1,9 @@
+import logging
 from app.engine.registry import NodeRegistry
 from app.utils.templating import resolve_placeholders
 from app.core.state import FlowState
+
+logger = logging.getLogger(__name__)
 
 @NodeRegistry.register("Start Node")
 async def start_node(state: FlowState, node_config: dict) -> dict:
@@ -11,9 +14,9 @@ async def start_node(state: FlowState, node_config: dict) -> dict:
 async def end_node(state: FlowState, node_config: dict) -> dict:
     """Evaluates the final_input and prepares the response for the user."""
     inputs = {p["key"]: p["value"] for p in node_config.get("inputParameters", [])}
-    
-    # Resolve the final dynamic message (e.g., "Sorry, couldn't find {{customer}}")
     final_text = resolve_placeholders(inputs.get("final_input", ""), state["variables"])
+    
+    logger.info(f"🏁 Reached End Node. Result: {str(final_text)[:100]}...")
     
     out_params = node_config.get("outputParameters", [])
     output_key = out_params[0]["value"] if out_params else "final_output"
@@ -25,6 +28,8 @@ async def text_node(state: FlowState, node_config: dict) -> dict:
     """Basic text processing node."""
     inputs = {p["key"]: p["value"] for p in node_config.get("inputParameters", [])}
     text = resolve_placeholders(inputs.get("text", ""), state["variables"])
+    
+    logger.debug(f"Text Node Resolution: {str(text)[:50]}...")
     
     out_params = node_config.get("outputParameters", [])
     output_key = out_params[0]["value"] if out_params else "output"

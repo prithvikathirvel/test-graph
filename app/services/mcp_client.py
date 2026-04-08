@@ -48,7 +48,10 @@ class UnifiedMCPClient:
         for srv in data.get("servers", []):
             config = MCPServerConfig(**srv)
             if config.enabled:
+                logger.debug(f"Found enabled MCP server in config: {config.server_id}")
                 await self.connect_server(config)
+            else:
+                logger.debug(f"Skipping disabled MCP server: {config.server_id}")
 
     async def connect_server(self, config: MCPServerConfig) -> bool:
         self.servers[config.server_id] = config
@@ -73,6 +76,7 @@ class UnifiedMCPClient:
                 return False
 
             # 🚀 FIX: Use enter_async_context to safely lock the connections in memory
+            logger.debug(f"Establishing {config.transport_type} connection to {config.server_id}...")
             read, write = await self.exit_stack.enter_async_context(session_manager)
             session = ClientSession(read, write)
             await self.exit_stack.enter_async_context(session)
@@ -107,8 +111,10 @@ class UnifiedMCPClient:
     def list_server_tools(self, server_id: str) -> List[Dict[str, Any]]:
         """Transform raw MCP Tool objects into the standardized Agent Studio node schema."""
         if server_id not in self.server_tools:
+            logger.debug(f"No tools found for server: {server_id}")
             return []
 
+        logger.debug(f"Transforming {len(self.server_tools[server_id])} tools for server: {server_id}")
         now = datetime.datetime.utcnow().isoformat() + "Z"
         transformed = []
 

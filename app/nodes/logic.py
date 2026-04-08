@@ -60,7 +60,7 @@ async def decision_node(state: FlowState, node_config: dict) -> dict:
         
         if ConditionEvaluator.evaluate(left_value, op, right_value):
             target_node = condition.get("nextNode")
-            logger.info(f"🔀 Decision Node Matched! Saving target: {target_node}")
+            logger.info(f"🔀 Decision | {left_value} {op} {right_value} -> Match! Routing to: {target_node}")
             return {"variables": {output_key: target_node}}
 
     logger.warning(f"⚠️ Decision Node: No condition met. Defaulting to END.")
@@ -88,10 +88,13 @@ async def iterator_node(state: FlowState, node_config: dict) -> dict:
 
     new_vars = {}
     if current_idx < len(array_data):
-        new_vars[iter_var] = array_data[current_idx]
+        item = array_data[current_idx]
+        logger.debug(f"🔄 Iterator | idx: {current_idx}/{len(array_data)} | next item: {str(item)[:50]}...")
+        new_vars[iter_var] = item
         new_vars[idx_key] = current_idx + 1
         new_vars[f"_iter_status_{node_id}"] = "loop"
     else:
+        logger.info(f"🏁 Iterator | reached end of list ({len(array_data)} items).")
         new_vars[idx_key] = 0
         new_vars[f"_iter_status_{node_id}"] = "complete"
 

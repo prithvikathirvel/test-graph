@@ -37,8 +37,18 @@ logger = logging.getLogger(__name__)
 # ==========================================
 @asynccontextmanager
 async def lifespan(app: FastAPI):
+    logger.info("🚀 Starting Sify Aurora Engine...")
+    
     # Core DB & Checkpointer
-    mongo_client = MongoClient(settings.MONGO_URI)
+    try:
+        mongo_client = MongoClient(settings.MONGO_URI)
+        # Trigger a connection check
+        mongo_client.admin.command('ping')
+        logger.info("✅ Connected to MongoDB successfully.")
+    except Exception as e:
+        logger.error(f"❌ Failed to connect to MongoDB: {e}")
+        raise
+
     checkpointer = MongoDBSaver(
         client=mongo_client,
         db_name=getattr(settings, "MONGO_DB_NAME", "agent_studio"),
@@ -47,19 +57,28 @@ async def lifespan(app: FastAPI):
     
     # State Services
     voice_service = UniversalVoiceService()
+    logger.info("Initialized Universal Voice Service.")
 
     app.state.mongo_client = mongo_client
     app.state.checkpointer = checkpointer
     app.state.voice_service = voice_service
     
     # Init MCP Server & Client
-    load_exposed_flows(mongo_client, getattr(settings, "MONGO_DB_NAME", "agent_studio"))
-    await mcp_client_manager.load_from_json("mcpServers.json")
+    try:
+        load_exposed_flows(mongo_client, getattr(settings, "MONGO_DB_NAME", "agent_studio"))
+        logger.info("Exposed flows loaded for MCP server.")
+        
+        await mcp_client_manager.load_from_json("mcpServers.json")
+        logger.info("External MCP clients initialized.")
+    except Exception as e:
+        logger.warning(f"Problem during MCP initialization: {e}")
     
     yield
     
+    logger.info("🛑 Shutting down Sify Aurora Engine...")
     await mcp_client_manager.close_all()
     mongo_client.close()
+    logger.info("Cleanup complete. Goodbye!")
 
 # ==========================================
 # 2. App Initialization

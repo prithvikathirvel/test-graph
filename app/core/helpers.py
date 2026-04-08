@@ -17,22 +17,27 @@ logger = logging.getLogger(__name__)
 async def fetch_schema_by_agent_id(agent_id: str) -> dict:
     base_url = settings.SCHEMA_API_URL.rstrip("/")
     url = f"{base_url}/{agent_id}"
+    logger.debug(f"Fetching schema for agent '{agent_id}' from {url}")
     try:
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.get(url)
             response.raise_for_status()
             schema = response.json()
             if not schema:
+                logger.error(f"Empty schema returned for agent '{agent_id}'")
                 raise ValueError("API returned empty schema")
+            logger.debug(f"Successfully fetched schema for '{agent_id}'")
             return schema
     except Exception as e:
         logger.error(f"Schema Fetch Error for {agent_id}: {str(e)}")
         raise HTTPException(status_code=404, detail=f"Failed to fetch schema for agent {agent_id}: {e}")
 
 async def get_and_compile_graph(agent_id: str, request: Request):
+    logger.info(f"Compiling graph for agent: {agent_id}")
     schema = await fetch_schema_by_agent_id(agent_id)
     compiler = GraphCompiler(schema, checkpointer=request.app.state.checkpointer)
     graph = compiler.build()
+    logger.info(f"Graph compilation complete for agent: {agent_id}")
     return graph, schema
 
 async def format_exact_response(status: str, result_state: dict, req: Any, request: Request, interrupt_data: dict = None, final_user_message: str = None) -> dict:
