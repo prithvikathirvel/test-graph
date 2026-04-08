@@ -1,3 +1,4 @@
+import os
 from pydantic_settings import BaseSettings
 
 class Settings(BaseSettings):
@@ -14,11 +15,20 @@ class Settings(BaseSettings):
     OPENAI_API_KEY: str = "sk-Fm3dP1vX7qYt6uJzZbL5Kr2HgS8oWnCxEjQaRfNiGpTl"
     OPENAI_BASE_URL: str = "https://infinitai.sifymdp.digital/maas/v1"
     GOOGLE_APPLICATION_CREDENTIALS: str = "service-account.json"
+    LANGSMITH_TRACING: str = "true"
+    LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
+    LANGSMITH_API_KEY: str = "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"
+    LANGSMITH_PROJECT: str = "Sify_Agent_Studio"
     
     class Config:
         env_file = ".env"
 
 settings = Settings()
+
+os.environ["LANGSMITH_TRACING"] = settings.LANGSMITH_TRACING
+os.environ["LANGSMITH_ENDPOINT"] = settings.LANGSMITH_ENDPOINT
+os.environ["LANGSMITH_API_KEY"] = settings.LANGSMITH_API_KEY
+os.environ["LANGSMITH_PROJECT"] = settings.LANGSMITH_PROJECT
 
 # Default Voice Config fallback
 DEFAULT_VOICE_CONFIG = {

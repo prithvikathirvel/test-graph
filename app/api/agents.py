@@ -1,0 +1,174 @@
+import logging
+from typing import Optional
+from fastapi import APIRouter, HTTPException, Request
+from fastapi.responses import JSONResponse
+from langgraph.types import Command
+
+# --- Local Project Imports ---
+from app.core.config import settings, DEFAULT_VOICE_CONFIG
+from app.core.logger import trace_ctx
+from app.core.model import InvokeReq, ResumeReq
+from app.core.helpers import (
+    fetch_schema_by_agent_id, 
+    get_and_compile_graph, 
+    format_exact_response
+)
+from app.services.voice.service import UniversalVoiceService, should_run_stt
+
+logger = logging.getLogger(__name__)
+router = APIRouter(tags=["Agent Flows"])
+
+# ==========================================
+# AGENT FLOW DISCOVERY API
+# ==========================================
+@router.get("/agents/flows")
+async def list_agent_flows(request: Request):
+    """List all available agent flows with their required input parameters."""
+    try:
+        db_name = getattr(settings, "MONGO_DB_NAME", "agent_studio")
+        db = request.app.state.mongo_client[db_name]
+        collection = db["agent_flows"]
+
+        flows = list(collection.find(
+            {"status": {"$ne": "deleted"}},
+            {
+                "_id": 0,
+                "agent_id": 1,
+                "id": 1,
+                "name": 1,
+                "description": 1,
+                "inputs": 1,
+                "status": 1,
+                "type": 1,
+                "version": 1,
+            }
+        ))
+
+        result = []
+        for flow in flows:
+            flow_id = flow.get("agent_id") or flow.get("id") or ""
+            inputs = flow.get("inputs", [])
+            input_params = [{
+                "key": inp.get("key", ""),
+                "type": inp.get("type", "text"),
+                "default_value": inp.get("value", ""),
+                "required": True,
+            } for inp in inputs]
+
+            result.append({
+                "agent_id": flow_id,
+                "name": flow.get("name", "Unnamed Flow"),
+                "description": flow.get("description", ""),
+                "type": flow.get("type", "flow"),
+                "status": flow.get("status", "active"),
+                "version": flow.get("version", "1.0.0"),
+                "input_parameters": input_params,
+                "input_count": len(input_params),
+            })
+
+        return JSONResponse(content={"success": True, "count": len(result), "flows": result})
+    except Exception as e:
+        logger.error(f"List Agent Flows Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/agents/flows/{agent_id}")
+async def get_agent_flow_detail(agent_id: str, request: Request):
+    """Get detailed info for a single agent flow."""
+    try:
+        schema = await fetch_schema_by_agent_id(agent_id)
+        inputs = schema.get("inputs", [])
+        input_params = [{
+            "key": inp.get("key", ""),
+            "type": inp.get("type", "text"),
+            "default_value": inp.get("value", ""),
+            "required": True,
+        } for inp in inputs]
+
+        return JSONResponse(content={
+            "success": True,
+            "agent_id": agent_id,
+            "name": schema.get("name", ""),
+            "description": schema.get("description", ""),
+            "type": schema.get("type", "flow"),
+            "status": schema.get("status", "active"),
+            "version": schema.get("version", "1.0.0"),
+            "input_parameters": input_params,
+            "input_count": len(input_params),
+        })
+    except Exception as e:
+        logger.error(f"Get Agent Flow Detail Error: {str(e)}")
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+# ==========================================
+# MAIN INVOCATION ROUTES
+# ==========================================
+@router.post("/agents/invoke/{agent_id}")
+async def invoke(agent_id: str, req: InvokeReq, request: Request):
+    trace_ctx.set(f"flow:{req.thread_id[-6:]}")
+    logger.info(f"Starting new invocation for agent: {agent_id}")
+    try:
+        graph, schema = await get_and_compile_graph(agent_id, request)
+
+        variables = {}
+        for inp in schema.get("inputs", []):
+            variables[inp["key"]] = inp.get("value", "")
+
+        user_message = req.userInput.message if req.userInput else ""
+        if req.voice_enabled and req.userInput and req.userInput.voiceInput:
+            v_config = req.voice_config.model_dump() if req.voice_config else DEFAULT_VOICE_CONFIG
+            if should_run_stt(v_config, has_voice=True):
+                voice_svc: UniversalVoiceService = request.app.state.voice_service
+                provider = v_config.get("stt_provider", "whisper")
+                user_message = await voice_svc.process_stt(req.userInput.voiceInput, provider)
+
+        if user_message:
+            variables["CHAT_QUERY"] = user_message
+
+        initial_state = {
+            "session_id": req.session_id, 
+            "user_id": req.user_id, 
+            "thread_id": req.thread_id, 
+            "variables": variables
+        }
+        config = {"configurable": {"thread_id": req.thread_id}, "recursion_limit": 150}
+
+        result = await graph.ainvoke(initial_state, config=config)
+        snapshot = graph.get_state(config)
+        
+        if snapshot.next:
+            interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
+            return await format_exact_response("PAUSED", result, req, request, interrupt_data)
+            
+        return await format_exact_response("COMPLETED", result, req, request)
+    except Exception as e:
+        logger.error(f"Invoke Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/agents/resume/{agent_id}")
+async def resume(agent_id: str, req: ResumeReq, request: Request):
+    trace_ctx.set(f"flow:{req.thread_id[-6:]}") 
+    logger.info(f"Resuming flow from node: {req.node_id}")
+    try:
+        graph, _ = await get_and_compile_graph(agent_id, request)
+        
+        user_response = req.user_response
+        if req.voice_enabled and req.userInput and req.userInput.voiceInput:
+            v_config = req.voice_config.model_dump() if req.voice_config else DEFAULT_VOICE_CONFIG
+            if should_run_stt(v_config, has_voice=True):
+                voice_svc: UniversalVoiceService = request.app.state.voice_service
+                provider = v_config.get("stt_provider", "whisper")
+                user_response = await voice_svc.process_stt(req.userInput.voiceInput, provider)
+
+        config = {"configurable": {"thread_id": req.thread_id}}
+        result = await graph.ainvoke(Command(resume=user_response), config=config)
+        snapshot = graph.get_state(config)
+        
+        if snapshot.next:
+            interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
+            return await format_exact_response("PAUSED", result, req, request, interrupt_data, final_user_message=user_response)
+            
+        return await format_exact_response("COMPLETED", result, req, request, final_user_message=user_response)
+    except Exception as e:
+        logger.error(f"Resume Error: {str(e)}")
+        raise HTTPException(status_code=500, detail=str(e))

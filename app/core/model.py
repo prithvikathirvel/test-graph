@@ -1,3 +1,4 @@
+import uuid
 from pydantic import BaseModel, Field
 from typing import Any, Dict, Optional, List
 from enum import Enum
@@ -8,22 +9,20 @@ class UserInput(BaseModel):
     uploadedFiles: Optional[List[Any]] = []
 
 class VoiceConfig(BaseModel):
-    stt_provider: str = "whisper"
     tts_provider: str = "piper"
+    stt_provider: str = "whisper"
     mode: str = "voice_in_voice_out"
 
-class InvokeRequest(BaseModel):
+class InvokeReq(BaseModel):
     agent_id: str
     userInput: Optional[UserInput] = None
     voice_config: Optional[VoiceConfig] = None
     voice_enabled: bool = False
-    
-    # Optional overrides
     user_id: str = "default_user"
-    session_id: str = "session_default"
-    thread_id: str = "thread_default"
+    session_id: str = Field(default_factory=lambda: f"session_{uuid.uuid4().hex}")
+    thread_id: str = Field(default_factory=lambda: f"thread_{uuid.uuid4().hex}")
 
-class ResumeRequest(BaseModel):
+class ResumeReq(BaseModel):
     agent_id: str
     user_id: str
     session_id: str
@@ -33,7 +32,12 @@ class ResumeRequest(BaseModel):
     input_type: str = "text"
     voice_config: Optional[VoiceConfig] = None
     voice_enabled: bool = False
-    userInput: Optional[UserInput] = None # For voice input on resume
+    userInput: Optional[UserInput] = None
+
+class DynamicFlowReq(BaseModel):
+    query: str = Field(description="Natural language description of the workflow to build.")
+    session_id: str = Field(default_factory=lambda: f"arch_session_{uuid.uuid4().hex}")
+    thread_id: str = Field(default_factory=lambda: f"arch_thread_{uuid.uuid4().hex}")
 
 class MCPTransportType(str, Enum):
     STDIO = "stdio"
