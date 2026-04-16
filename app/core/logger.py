@@ -1,7 +1,15 @@
 import os
 import logging
+import pytz
+from datetime import datetime
 from logging.handlers import TimedRotatingFileHandler
 from contextvars import ContextVar
+
+# Set logging to Indian Standard Time (IST)
+def ist_converter(*args):
+    return datetime.now(pytz.timezone('Asia/Kolkata')).timetuple()
+
+logging.Formatter.converter = ist_converter
 
 # 🚀 Context Variable: This allows us to track async requests across all files!
 # It defaults to "SYSTEM" but will be updated to the "thread_id" during LangGraph executions.
