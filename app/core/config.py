@@ -19,6 +19,7 @@ class Settings(BaseSettings):
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
     LANGSMITH_API_KEY: str = "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"
     LANGSMITH_PROJECT: str = "Sify_Agent_Studio"
+    TAVILY_API_KEY: str
     
     class Config:
         env_file = ".env"

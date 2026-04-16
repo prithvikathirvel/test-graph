@@ -8,6 +8,8 @@ from app.core.config import settings
 import os
 import json
 import logging
+import asyncio
+from app.utils.tools import _perform_sync_web_search
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +21,12 @@ async def api_caller_node(state: FlowState, node_config: dict) -> dict:
     url = resolve_placeholders(inputs.get("url"), state["variables"])
     method = resolve_placeholders(inputs.get("method", "GET"), state["variables"]).upper()
     data = resolve_placeholders(inputs.get("data", {}), state["variables"])
+    if isinstance(data, str):
+        try:
+            data = json.loads(data)
+        except (json.JSONDecodeError, TypeError):
+            pass  # Use as it is if it's not a valid JSON string
+
     headers = resolve_placeholders(inputs.get("headers", {}), state["variables"])
     timeout = float(inputs.get("timeout", 10.0) or 10.0)
     
@@ -41,7 +49,16 @@ async def api_caller_node(state: FlowState, node_config: dict) -> dict:
             
             return {"variables": {output_key: result}}
             
+    except httpx.HTTPStatusError as e:
+        # Capture the actual error body from the API (especially useful for 422 validation errors)
+        try:
+            detail = e.response.json()
+        except Exception:
+            detail = e.response.text
+        logger.error(f"❌ API Caller HTTP Error {e.response.status_code}: {detail}")
+        return {"variables": {output_key: {"error": f"HTTP {e.response.status_code}", "detail": detail}}}
     except Exception as e:
+        logger.exception("❌ API Caller Unexpected Error")
         return {"variables": {output_key: {"error": str(e)}}}
 
 
@@ -155,3 +172,61 @@ async def kb_retrieval_node(state: FlowState, node_config: dict) -> dict:
     except Exception as e:
         logger.error(f"KB Retrieval Node Error: {str(e)}")
         return {"variables": {output_key: f"Internal Search Error: {str(e)}"}}
+
+
+
+@NodeRegistry.register("Web Search")
+async def web_search_node(state: FlowState, node_config: dict) -> dict:
+    """
+    Performs a web search using Tavily and returns the raw results as a
+    formatted text block.
+    """
+    logger.info("🟢 Entering Web Search Node (Raw Results Mode)...")
+
+    # 1. Parse and resolve inputs from the node configuration
+    inputs = {p["key"]: p["value"] for p in node_config.get("inputParameters", [])}
+    
+    search_query_template = inputs.get("search_query", "{{CHAT_QUERY}}")
+    max_results = int(inputs.get("search_count", 3))
+
+    search_query = resolve_placeholders(search_query_template, state["variables"])
+
+    out_params = node_config.get("outputParameters", [])
+    output_key = out_params[0]["value"] if out_params else "search_results"
+
+    if not search_query:
+        logger.warning("Web Search Node skipped: search_query is empty.")
+        return {"variables": {output_key: "Search query was empty."}}
+
+    try:
+        # 2. Perform the web search in a background thread
+        search_results = await asyncio.to_thread(
+            _perform_sync_web_search, search_query, max_results
+        )
+
+        if not search_results:
+            return {"variables": {output_key: "No results found from the web search."}}
+
+        formatted_results = "<hr>".join(
+    [
+        f"""
+        <div class="search-result">
+            <h3>{result.get('title', 'N/A')}</h3>
+            <p><a href="{result.get('url', '#')}" target="_blank">
+                {result.get('url', 'N/A')}
+            </a></p>
+            <p>{result.get('content', 'N/A')}</p>
+        </div>
+        """
+        for result in search_results
+    ]
+)
+        
+        logger.info("✅ Web Search Node completed successfully (raw results).")
+        
+        # 4. Return the formatted text block directly
+        return {"variables": {output_key: formatted_results}}
+
+    except Exception as e:
+        logger.error(f"❌ Error in Web Search Node: {e}", exc_info=True)
+        return {"variables": {output_key: f"An error occurred during the web search: {e}"}}
