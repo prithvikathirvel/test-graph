@@ -1,0 +1,95 @@
+{
+    "plan_id": "8d2c1a44-6f3b-4f2d-9c9a-3a7e5b2d1f90",
+    "created_by": "cmdb_planner",
+    "dry_run": false,
+    "on_failure": "CONTINUE",
+    "execution_plan": [
+        {
+            "step_id": "step_1",
+            "action": "INFO",
+            "target": {
+                "dynamic_filter": {
+                    "ci_type": "Service",
+                    "filters": [
+                        {
+                            "property": "name",
+                            "operator": "eq",
+                            "value": "Payment Service"
+                        }
+                    ]
+                }
+            },
+            "reason": "Resolve CI ID for Payment Service to increase RAM as requested by user.",
+            "idempotency_key": "-",
+            "payload": {
+                "action": "INFO",
+                "fields": [
+                    "ci_id",
+                    "name"
+                ],
+                "output_ref": "payment_service",
+                "include_relationships": true
+            }
+        },
+        {
+            "step_id": "step_2",
+            "action": "INFO",
+            "target": {
+                "dynamic_filter": {
+                    "ci_type": "Compute",
+                    "filters": [
+                        {
+                            "property": "ci_id",
+                            "operator": "in",
+                            "value": "${payment_service.related_ci_ids}"
+                        }
+                    ]
+                }
+            },
+            "reason": "Identify compute resources associated with Payment Service to update RAM as requested by user.",
+            "depends_on": [
+                "step_1"
+            ],
+            "idempotency_key": "-",
+            "payload": {
+                "action": "INFO",
+                "fields": [
+                    "ci_id",
+                    "name",
+                    "memory_gb"
+                ],
+                "output_ref": "payment_compute",
+                "include_relationships": false
+            }
+        },
+        {
+            "step_id": "step_3",
+            "action": "UPDATE",
+            "target": {
+                "dynamic_filter": {
+                    "ci_type": "Compute",
+                    "filters": [
+                        {
+                            "property": "ci_id",
+                            "operator": "in",
+                            "value": "${payment_compute.ci_id}"
+                        }
+                    ]
+                }
+            },
+            "reason": "Increase RAM to 16GB for compute resources of Payment Service as requested by user.",
+            "depends_on": [
+                "step_2"
+            ],
+            "idempotency_key": "-",
+            "payload": {
+                "action": "UPDATE",
+                "operation": "resize",
+                "operation_params": {
+                    "cpu_cores": 4,
+                    "memory_gb": 16
+                }
+            }
+        }
+    ]
+}

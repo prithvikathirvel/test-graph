@@ -15,7 +15,8 @@ async def question_node(state: FlowState, node_config: dict) -> dict:
     print("="*50 + "\n")
     
     inputs = {p["key"]: p["value"] for p in node_config.get("inputParameters", [])}
-    question_text = resolve_placeholders(inputs.get("question_text", "Input required:"), state["variables"])
+    # Match the schema key + resolve the template
+    question_text = resolve_placeholders(inputs.get("question", inputs.get("question_text", "Input required:")), state["variables"])
     options = resolve_placeholders(inputs.get("options", {}), state["variables"])
     
     input_type = "text"

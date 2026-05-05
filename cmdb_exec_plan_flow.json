@@ -1,0 +1,866 @@
+{
+  "name": "CMDB Execution Plan Generator",
+  "description": "Decomposes complex user queries into sub-tasks using Turtle RDF ontology, generates CMDB execution plans with asset-resolved details, injects suitable MCP tools with pre-filled arguments, presents human-readable plans for confirmation, and executes confirmed MCP tool calls.",
+  "type": "flow",
+  "version": "2.0.0",
+  "status": "active",
+  "isPublic": true,
+  "createdBy": "Admin",
+  "agent_id": "cmdb_exec_plan_v2",
+  "id": "cmdb_exec_plan_v2",
+  "inputs": [
+    {
+      "key": "CHAT_QUERY",
+      "value": "",
+      "type": "text"
+    }
+  ],
+  "graphSpec": {
+    "nodes": [
+      {
+        "node_id": "Start_1",
+        "name": "Start Node",
+        "displayName": "Start",
+        "type": "start",
+        "description": "Flow entry point",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Ask_Customer_ID_2",
+        "name": "Question Node",
+        "displayName": "Ask Customer ID",
+        "type": "inputs",
+        "description": "Prompts user for their Customer ID",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "\ud83d\udc4b Welcome to Sify IT Support!\n\nPlease enter your Customer ID to continue:\n(Sample customers: 101, 102, 103, 104, 105, 106, 107, 108, 109, 110)",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "customer_id",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Fetch_Ontology_3",
+        "name": "API caller",
+        "displayName": "Fetch CMDB Ontology (Turtle RDF)",
+        "type": "tool",
+        "description": "Fetches the CMDB graph ontology in Turtle RDF format — describes node labels, relationships, and property types for LLM context.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "method",
+            "value": "GET",
+            "type": "text"
+          },
+          {
+            "key": "url",
+            "value": "http://1.6.37.35/cmdb/schema?format=turtle",
+            "type": "text"
+          },
+          {
+            "key": "timeout",
+            "value": 10,
+            "type": "number"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "cmdb_ontology",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "node_id": "Fetch_Customer_Assets_4",
+        "name": "API caller",
+        "displayName": "Fetch Customer Assets from CMDB",
+        "type": "tool",
+        "description": "Queries CMDB for ALL assets owned by this customer. Returns instance data (names, IPs, hostnames, statuses) for asset resolution.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "method",
+            "value": "POST",
+            "type": "text"
+          },
+          {
+            "key": "url",
+            "value": "http://1.6.37.35/cmdb/query",
+            "type": "text"
+          },
+          {
+            "key": "data",
+            "value": {
+              "query": "MATCH (c:Customer)-[r:OWNS]->(asset) WHERE c.customer_id = $cust_id OR c.id = toString($cust_id) RETURN c AS customer, labels(asset) AS asset_type, asset.name AS asset_name, asset.status AS asset_status, asset.ip_address AS ip_address, asset.hostname AS hostname, asset.environment AS environment, asset.ci_type AS ci_type, asset.sub_type AS sub_type, asset ORDER BY labels(asset), asset.name",
+              "parameters": {
+                "cust_id": "{{customer_id}}"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "key": "timeout",
+            "value": 15,
+            "type": "number"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "customer_assets",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "node_id": "Discover_Tools_5",
+        "name": "API caller",
+        "displayName": "Discover Available MCP Tools",
+        "type": "tool",
+        "description": "Fetches all available MCP tools from connected MCP servers for tool binding.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "method",
+            "value": "GET",
+            "type": "text"
+          },
+          {
+            "key": "url",
+            "value": "http://localhost:5000/engine/mcp/tools",
+            "type": "text"
+          },
+          {
+            "key": "timeout",
+            "value": 10,
+            "type": "number"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "available_tools",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "node_id": "Ask_User_Query_6",
+        "name": "Question Node",
+        "displayName": "Ask User's Complex Query",
+        "type": "inputs",
+        "description": "Asks the user for their complex query to decompose into sub-tasks",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "\ud83c\udfaf Please describe ALL the tasks or issues you need help with today.\n\nI'll break them down, resolve your asset details from CMDB, generate execution plans, match tools, and execute after your confirmation.\n\n\ud83d\udca1 Example: \"Reboot all servers except db server, add one more server for the payment app, and audit compliance on all databases\"",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_query",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Decompose_Tasks_7",
+        "name": "LLM invoker",
+        "displayName": "Decompose Query into Sub-Tasks",
+        "type": "agent",
+        "description": "LLM Call 1: Breaks user query into sub-tasks. Resolves generic asset references to specific CMDB names using ontology and asset data.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "gemini-2.5-flash",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "user_query",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "You are a CMDB Task Decomposer. Break a complex user request into individual, actionable sub-tasks.\n\n### User Request:\n{{user_query}}\n\n### Customer's CMDB Assets (actual instances):\n{{customer_assets}}\n\n### CMDB Ontology (Turtle RDF):\n{{cmdb_ontology}}\n\n### Available Tools (for awareness of what can be automated):\n{{available_tools}}\n\n### Instructions:\n1. Break the user's request into the smallest independent sub-tasks.\n2. **CRITICAL: Resolve generic asset references to SPECIFIC asset names from the customer's CMDB data.**\n   - \"all servers\" \u2192 list each server by name from customer_assets\n   - \"reboot all servers except db server\" \u2192 \"reboot app-modernize-server, web-frontend-01\" (excluding database-related servers)\n   - \"my application\" \u2192 resolve to the actual application name(s)\n3. Each sub-task should map to a single action type (CREATE, UPDATE, DELETE, INFO, or AUDIT).\n4. Use the ontology to understand CI types and relationships.\n5. Set priority based on impact: critical (outage/security), high (performance), medium (changes), low (info/audit).\n\n### Output Format:\n{\n  \"sub_tasks\": [\n    {\n      \"task_id\": \"task-1\",\n      \"original_text\": \"reboot all servers except db server\",\n      \"description\": \"Reboot servers: app-modernize-server (10.0.1.5), web-frontend-01 (10.0.1.10) \u2014 excluding database servers\",\n      \"intent\": \"server_reboot\",\n      \"entities\": [\"app-modernize-server\", \"web-frontend-01\"],\n      \"ci_types\": [\"Compute\"],\n      \"priority\": \"high\"\n    }\n  ],\n  \"total_tasks\": 1\n}\n\nReturn ONLY the JSON object.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "decomposed_tasks",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Iterator_Tasks_8",
+        "name": "Iterator Node",
+        "displayName": "Loop Through Sub-Tasks",
+        "type": "iterator",
+        "description": "Outer iterator: loops through each decomposed sub-task for plan generation, tool injection, confirmation, and execution",
+        "interrupt": false,
+        "next": [
+          "Generate_Plan_9",
+          "End_Output_21"
+        ],
+        "loopPath": "Generate_Plan_9",
+        "completePath": "End_Output_21",
+        "inputParameters": [
+          {
+            "key": "array",
+            "value": "{{decomposed_tasks.sub_tasks}}",
+            "type": "text"
+          },
+          {
+            "key": "iterationVariable",
+            "value": "current_task",
+            "type": "text"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Generate_Plan_9",
+        "name": "LLM invoker",
+        "displayName": "Generate Execution Plan",
+        "type": "agent",
+        "description": "LLM Call 2 (per sub-task): Generates a CMDB execution plan with asset-resolved details using Turtle RDF ontology.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "gemini-2.5-flash",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "current_task",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "You are a CMDB Execution Planner. Your ONLY output is a valid JSON execution plan.\n\n### Current Sub-Task:\n{{current_task}}\n\n### Customer's CMDB Assets:\n{{customer_assets}}\n\n### CMDB Ontology (Turtle RDF):\n{{cmdb_ontology}}\n\n### Execution Plan Schema:\n{\n  \"plan_id\": \"uuid\",\n  \"created_by\": \"string\",\n  \"dry_run\": false,\n  \"on_failure\": \"ABORT_ALL|CONTINUE|ROLLBACK\",\n  \"steps\": [{\n    \"step_id\": \"step-N\",\n    \"action\": \"CREATE|UPDATE|DELETE|INFO|AUDIT\",\n    \"target\": ONE_OF(\n      {\"ci_ids\": [\"ci-xxx\"]},\n      {\"dynamic_filter\": {\"ci_type\": \"Compute|Application|Database|Network|Storage|Service|User|Location|Vendor\", \"filters\": [{\"property\":\"...\", \"operator\":\"eq|neq|gt|lt|contains|in|not_in\", \"value\":\"...\"}], \"exclude?\": {\"ci_ids\":[], \"filters\":[]}}},\n      {\"new_ci\": {\"ci_type\": \"...\"}}\n    ),\n    \"reason\": \"min 10 chars\",\n    \"depends_on?\": [\"step-N\"],\n    \"requires_approval?\": true,\n    \"idempotency_key\": \"-\",\n    \"timeout_seconds?\": 60,\n    \"payload\": {\n      \"action\": \"same as step action\",\n      \"CREATE\": {\"specs\": {\"CI props from ontology\"}, \"count\": 1},\n      \"UPDATE\": {\"operation?\": \"reboot|shutdown|start|add_storage|resize|patch|add_relationship|remove_relationship\", \"operation_params?\": {}, \"set_properties?\": {}},\n      \"DELETE\": {\"archive\": true, \"backup_before?\": true, \"force?\": false, \"notify_owner?\": true},\n      \"INFO\":   {\"fields?\": [\"prop1\"], \"output_ref?\": \"var_name\", \"include_relationships?\": false},\n      \"AUDIT\":  {\"check_type\": \"compliance|ownership|patch_status|backup_status|connectivity|encryption|sla_breach\", \"severity_threshold?\": \"LOW|MEDIUM|HIGH|CRITICAL\", \"notify_on_fail?\": true}\n    }\n  }]\n}\n\n### Rules:\n1. Never output prose \u2014 JSON only.\n2. Always begin with an INFO step to resolve CI names to ci_ids. Never hardcode ci_ids.\n3. Use target.new_ci for CREATE steps. Never use ci_ids or dynamic_filter for CREATE.\n4. Set depends_on so steps execute in safe order.\n5. Set requires_approval: true for CREATE or DELETE steps.\n6. Set on_failure: \"ROLLBACK\" for plans with DELETE or multi-step CREATE.\n7. Set idempotency_key: \"-\" on every step.\n8. The reason field must quote the original user request intent.\n9. Use on_failure: \"ABORT_ALL\" for read-only (INFO/AUDIT-only) plans.\n10. Inject resolved asset names from customer_assets into targets and payloads.\n11. Include only payload fields relevant to the action type.\n\nReturn ONLY the execution plan JSON.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "current_exec_plan",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Inject_Tools_10",
+        "name": "LLM invoker",
+        "displayName": "Inject Tools into Execution Plan",
+        "type": "agent",
+        "description": "LLM Call 3 (per sub-task): Maps each step to the best MCP tool and pre-fills arguments from CMDB asset data. Outputs separate server_id and tool_name for MCP execution.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "gemini-2.5-flash",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "current_exec_plan",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "You are a Tool Injection Engine. For each step in the execution plan, find the best matching MCP tool and pre-fill its arguments from CMDB asset data.\n\n### Execution Plan:\n{{current_exec_plan}}\n\n### Available MCP Tools:\n{{available_tools}}\n\n### Customer's CMDB Assets (for argument resolution):\n{{customer_assets}}\n\n### Instructions:\nFor EACH step in the execution plan:\n1. Match the step's action + ci_type + operation to the best available MCP tool.\n2. Pre-fill the tool's arguments using values from customer_assets (IP addresses, hostnames, names, etc.).\n3. Add a \"tool_binding\" object to the step with SEPARATE server_id and tool_name fields.\n\n### tool_binding format:\nFor MCP tools:\n{\n  \"type\": \"mcp_tool\",\n  \"server_id\": \"infrastructure\",\n  \"tool_name\": \"reboot_server\",\n  \"arguments\": {\"ip_address\": \"10.0.1.5\", \"hostname\": \"app-mod-srv-01\"},\n  \"confidence\": 0.95,\n  \"reasoning\": \"Matched reboot operation on Compute to reboot_server tool\"\n}\n\nFor internal CMDB operations (INFO/AUDIT with no external tool):\n{\n  \"type\": \"internal\",\n  \"server_id\": null,\n  \"tool_name\": null,\n  \"arguments\": {},\n  \"confidence\": 1.0,\n  \"reasoning\": \"INFO step handled by CMDB engine directly\"\n}\n\nFor unmapped steps:\n{\n  \"type\": \"unmapped\",\n  \"server_id\": null,\n  \"tool_name\": null,\n  \"arguments\": {},\n  \"confidence\": 0,\n  \"reasoning\": \"No available tool for this operation\"\n}\n\n### Rules:\n1. Return the COMPLETE execution plan with tool_binding on every step.\n2. Extract server_id and tool_name from available_tools. Use exact names from the tools list.\n3. Pre-fill ALL required tool parameters from asset data. Leave optional params at defaults.\n4. server_id and tool_name MUST be separate string fields \u2014 never use composite keys.\n5. Include the full plan structure (plan_id, created_by, on_failure, steps).\n\nReturn ONLY the enriched execution plan JSON.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "enriched_plan",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Format_Plan_11",
+        "name": "LLM invoker",
+        "displayName": "Format Plan as Readable Summary",
+        "type": "agent",
+        "description": "Converts the JSON execution plan into a human-readable, well-formatted summary with emojis and clear structure. No raw JSON shown to user.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "gemini-2.5-flash",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "enriched_plan",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Convert this execution plan into a clear, human-readable summary. Do NOT show raw JSON.\n\n### Execution Plan (JSON):\n{{enriched_plan}}\n\n### Sub-Task Context:\n{{current_task.description}}\n\n### Format Rules:\nUse this EXACT structure:\n\n\ud83d\udccb **Execution Plan: <brief title from task>**\n\ud83d\udcdd Plan ID: <plan_id>\n\u2699\ufe0f Failure Policy: <on_failure>\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nThen for EACH step:\n\n**Step N: <human readable title>**\n\u2022 Action: <action emoji> <action> <operation if UPDATE>\n\u2022 Target: <ci_type> \u2014 <specific asset names>\n\u2022 Tool: <tool icon> <server_id>::<tool_name> OR \ud83d\udce6 Internal (CMDB) OR \u26a0\ufe0f Unmapped\n\u2022 Arguments: (only for mcp_tool steps)\n    \u2023 <key>: <value> (from <source>)\n    \u2023 <key>: <value>\n\u2022 Depends on: <step IDs or \"none\">\n\u2022 Approval: <\u2705 Not required / \u26a0\ufe0f Required>\n\nAction emojis: \ud83d\udd0d INFO, \ud83d\udd04 UPDATE, \u2795 CREATE, \u274c DELETE, \ud83d\udcca AUDIT\nTool icon: \ud83d\udd27 for mcp_tool\n\nEnd with:\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ud83d\udcca Total: <N> steps | <M> MCP tools | <K> internal | <J> unmapped\n\nKeep it clean, structured, and scannable. No JSON anywhere in the output.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "formatted_plan",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Present_Plan_12",
+        "name": "Question Node",
+        "displayName": "Present Plan for Confirmation",
+        "type": "inputs",
+        "description": "Shows the human-readable execution plan to the user for confirmation, override, or skip",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "{{formatted_plan}}\n\n---\n\u2705 Type **'confirm'** to execute this plan.\n\u270f\ufe0f Provide **changes** to override values (e.g. \"change IP to 10.0.1.6\", \"set force to true\").\n\u23ed\ufe0f Type **'skip'** to skip this task.",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_confirmation",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Classify_Response_13",
+        "name": "LLM invoker",
+        "displayName": "Classify User Response",
+        "type": "agent",
+        "description": "Classifies user response as confirmed/override/skip. If override, extracts the specific values to change.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "gemini-2.5-flash",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "user_confirmation",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Classify the user's response to an execution plan confirmation prompt.\n\n### User Response:\n{{user_confirmation}}\n\n### Current Enriched Plan:\n{{enriched_plan}}\n\n### Instructions:\n1. If user says yes/fine/confirm/ok/proceed/looks good/approve \u2192 status: \"confirmed\"\n2. If user says skip/cancel/no/don't do this \u2192 status: \"skip\"\n3. If user provides specific changes (e.g. \"change IP to 10.0.1.6\", \"set memory to 32GB\") \u2192 status: \"override\"\n\nFor overrides, extract the changes as key-value pairs mapping to tool_binding.arguments or payload fields.\n\n### Output Format:\n{\n  \"status\": \"confirmed\",\n  \"overrides\": {}\n}\n\nOR for override:\n{\n  \"status\": \"override\",\n  \"overrides\": {\n    \"step_id\": \"step-2\",\n    \"field_path\": \"tool_binding.arguments.ip_address\",\n    \"new_value\": \"10.0.1.6\",\n    \"changes_summary\": \"Changed target IP from 10.0.1.5 to 10.0.1.6\"\n  }\n}\n\nReturn ONLY the JSON object.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "confirmation_result",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Decision_Confirm_14",
+        "name": "Decision Node",
+        "displayName": "User Confirmed?",
+        "type": "conditions",
+        "description": "Routes based on user's confirmation: confirmed \u2192 execute, override \u2192 apply changes then execute, skip \u2192 next task",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{confirmation_result.status}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "confirmed",
+                "nextNode": "Step_Iterator_16"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "override",
+                "nextNode": "Apply_Override_15"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "skip",
+                "nextNode": "Iterator_Tasks_8"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "confirm_decision",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Apply_Override_15",
+        "name": "LLM invoker",
+        "displayName": "Apply User Overrides",
+        "type": "agent",
+        "description": "Applies user's override values to the enriched plan, then proceeds to execution.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "gemini-2.5-flash",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "confirmation_result",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Apply the user's override to the enriched execution plan.\n\n### Current Enriched Plan:\n{{enriched_plan}}\n\n### User's Override:\n{{confirmation_result}}\n\n### Instructions:\n1. Find the step and field specified in the override.\n2. Update the value in the plan (tool_binding.arguments, payload, or target).\n3. Return the COMPLETE updated execution plan with the override applied.\n4. Do not change anything else \u2014 only apply the specified override.\n\nReturn ONLY the updated execution plan JSON.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "enriched_plan",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Step_Iterator_16",
+        "name": "Iterator Node",
+        "displayName": "Execute Plan Steps",
+        "type": "iterator",
+        "description": "Inner iterator: loops through each step in the confirmed/overridden execution plan for tool execution",
+        "interrupt": false,
+        "next": [
+          "Decision_Step_Type_17",
+          "Iterator_Tasks_8"
+        ],
+        "loopPath": "Decision_Step_Type_17",
+        "completePath": "Iterator_Tasks_8",
+        "inputParameters": [
+          {
+            "key": "array",
+            "value": "{{enriched_plan.steps}}",
+            "type": "text"
+          },
+          {
+            "key": "iterationVariable",
+            "value": "current_step",
+            "type": "text"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Decision_Step_Type_17",
+        "name": "Decision Node",
+        "displayName": "Check Tool Binding Type",
+        "type": "conditions",
+        "description": "Routes each step based on its tool_binding.type: mcp_tool \u2192 execute, internal/unmapped \u2192 skip",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{current_step.tool_binding.type}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "mcp_tool",
+                "nextNode": "Execute_MCP_18"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "internal",
+                "nextNode": "Step_Iterator_16"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "unmapped",
+                "nextNode": "Step_Iterator_16"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "step_type_decision",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Execute_MCP_18",
+        "name": "MCP Tool",
+        "displayName": "Execute MCP Tool",
+        "type": "mcp-tool",
+        "description": "Executes the MCP tool with pre-confirmed arguments from the enriched execution plan. server_id, tool_name, and arguments come directly from tool_binding.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "server_id",
+            "value": "{{current_step.tool_binding.server_id}}",
+            "type": "string"
+          },
+          {
+            "key": "tool_name",
+            "value": "{{current_step.tool_binding.tool_name}}",
+            "type": "string"
+          },
+          {
+            "key": "arguments",
+            "value": "{{current_step.tool_binding.arguments}}",
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "step_result",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Format_Result_19",
+        "name": "LLM invoker",
+        "displayName": "Format Execution Result",
+        "type": "agent",
+        "description": "Formats the raw MCP tool execution result into a user-friendly message with step context and asset details.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "gemini-2.5-flash",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "step_result",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Format this MCP tool execution result into a clear, user-friendly message.\n\n### Step Details:\n- Step: {{current_step.step_id}}\n- Action: {{current_step.action}}\n- Reason: {{current_step.reason}}\n- Tool: {{current_step.tool_binding.server_id}}::{{current_step.tool_binding.tool_name}}\n- Arguments Used: {{current_step.tool_binding.arguments}}\n\n### Raw Execution Result:\n{{step_result}}\n\n### Format:\nProduce a concise summary:\n\n<status emoji> **Step <N>: <title>**\n\ud83d\udd27 Tool: <server>::<tool>\n\ud83d\udcca Result: <human-readable outcome>\n\ud83d\udccd Assets: <specific names/IPs affected>\n\u23f1\ufe0f Status: <success/failed/partial>\n\nIf the result contains an error, clearly flag it with \u274c.\nKeep it concise \u2014 3-5 lines max. No JSON.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "formatted_step_result",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Show_Result_20",
+        "name": "Question Node",
+        "displayName": "Show Step Result",
+        "type": "inputs",
+        "description": "Displays the formatted execution result for the current step and continues to the next step",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "{{formatted_step_result}}\n\n\u2192 Type **'ok'** to continue to the next step.",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "step_ack",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "End_Output_21",
+        "name": "End Node",
+        "displayName": "Flow Complete",
+        "type": "output",
+        "description": "Final output after all sub-tasks have been planned, confirmed, and executed",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "final_input",
+            "value": "\ud83c\udf89 **All Tasks Complete!**\n\n\ud83d\udcdd **Sub-Tasks Processed:** {{decomposed_tasks.total_tasks}}\n\n### Tasks Decomposed:\n{{decomposed_tasks.sub_tasks}}\n\n---\n\nAll execution plans were generated, confirmed, and tools executed with your live CMDB data. \ud83d\ude80\n\nIf you need anything else, start a new session.",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "final_output",
+            "type": "string"
+          }
+        ]
+      }
+    ],
+    "edges": [
+      {
+        "from": "Start_1",
+        "to": "Ask_Customer_ID_2"
+      },
+      {
+        "from": "Ask_Customer_ID_2",
+        "to": "Fetch_Ontology_3"
+      },
+      {
+        "from": "Fetch_Ontology_3",
+        "to": "Fetch_Customer_Assets_4"
+      },
+      {
+        "from": "Fetch_Customer_Assets_4",
+        "to": "Discover_Tools_5"
+      },
+      {
+        "from": "Discover_Tools_5",
+        "to": "Ask_User_Query_6"
+      },
+      {
+        "from": "Ask_User_Query_6",
+        "to": "Decompose_Tasks_7"
+      },
+      {
+        "from": "Decompose_Tasks_7",
+        "to": "Iterator_Tasks_8"
+      },
+      {
+        "from": "Iterator_Tasks_8",
+        "to": "Generate_Plan_9",
+        "condition": "loop"
+      },
+      {
+        "from": "Iterator_Tasks_8",
+        "to": "End_Output_21",
+        "condition": "complete"
+      },
+      {
+        "from": "Generate_Plan_9",
+        "to": "Inject_Tools_10"
+      },
+      {
+        "from": "Inject_Tools_10",
+        "to": "Format_Plan_11"
+      },
+      {
+        "from": "Format_Plan_11",
+        "to": "Present_Plan_12"
+      },
+      {
+        "from": "Present_Plan_12",
+        "to": "Classify_Response_13"
+      },
+      {
+        "from": "Classify_Response_13",
+        "to": "Decision_Confirm_14"
+      },
+      {
+        "from": "Decision_Confirm_14",
+        "to": "Step_Iterator_16",
+        "condition": "0"
+      },
+      {
+        "from": "Decision_Confirm_14",
+        "to": "Apply_Override_15",
+        "condition": "1"
+      },
+      {
+        "from": "Decision_Confirm_14",
+        "to": "Iterator_Tasks_8",
+        "condition": "2"
+      },
+      {
+        "from": "Apply_Override_15",
+        "to": "Step_Iterator_16"
+      },
+      {
+        "from": "Step_Iterator_16",
+        "to": "Decision_Step_Type_17",
+        "condition": "loop"
+      },
+      {
+        "from": "Step_Iterator_16",
+        "to": "Iterator_Tasks_8",
+        "condition": "complete"
+      },
+      {
+        "from": "Decision_Step_Type_17",
+        "to": "Execute_MCP_18",
+        "condition": "0"
+      },
+      {
+        "from": "Decision_Step_Type_17",
+        "to": "Step_Iterator_16",
+        "condition": "1"
+      },
+      {
+        "from": "Decision_Step_Type_17",
+        "to": "Step_Iterator_16",
+        "condition": "2"
+      },
+      {
+        "from": "Execute_MCP_18",
+        "to": "Format_Result_19"
+      },
+      {
+        "from": "Format_Result_19",
+        "to": "Show_Result_20"
+      },
+      {
+        "from": "Show_Result_20",
+        "to": "Step_Iterator_16"
+      }
+    ]
+  },
+  "voice_enabled": false,
+  "voice_config": {
+    "tts_provider": "piper",
+    "stt_provider": "whisper",
+    "mode": "voice_in_voice_out"
+  },
+  "updatedAt": "2026-04-24T09:24:00.000Z"
+}

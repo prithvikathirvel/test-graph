@@ -49,7 +49,7 @@ async def classifier_node(state: FlowState, node_config: dict) -> dict:
     if "Gemini" in model_choice:
         llm = ChatGoogleGenerativeAI(
                 credentials=credentials,
-                model="gemini-1.5-pro",
+                model="gemini-2.5-flash",
                 temperature=0,
                # convert_system_message_to_human=True
             )

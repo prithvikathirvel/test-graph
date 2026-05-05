@@ -1,0 +1,1134 @@
+{
+    "$schema": "http://json-schema.org/draft-07/schema#",
+    "type": "object",
+    "required": [
+        "plan_id",
+        "created_by",
+        "on_failure",
+        "execution_plan"
+    ],
+    "additionalProperties": false,
+    "properties": {
+        "plan_id": {
+            "type": "string",
+            "format": "uuid"
+        },
+        "created_by": {
+            "type": "string"
+        },
+        "dry_run": {
+            "type": "boolean"
+        },
+        "on_failure": {
+            "enum": [
+                "ABORT_ALL",
+                "CONTINUE",
+                "ROLLBACK"
+            ]
+        },
+        "execution_plan": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+                "$ref": "#/$defs/Step"
+            }
+        }
+    },
+    "$defs": {
+        "Env": {
+            "enum": [
+                "Prod",
+                "Staging",
+                "QA",
+                "Dev",
+                "DR"
+            ]
+        },
+        "Cloud": {
+            "enum": [
+                "AWS",
+                "GCP",
+                "Azure",
+                "On-Prem",
+                "Other"
+            ]
+        },
+        "DataClass": {
+            "enum": [
+                "Public",
+                "Internal",
+                "Confidential",
+                "Restricted"
+            ]
+        },
+        "SlaTier": {
+            "enum": [
+                "Tier1",
+                "Tier2",
+                "Tier3"
+            ]
+        },
+        "Compliance": {
+            "type": "array",
+            "items": {
+                "enum": [
+                    "PCI",
+                    "HIPAA",
+                    "SOC2",
+                    "ISO27001",
+                    "GDPR"
+                ]
+            }
+        },
+        "Meta": {
+            "properties": {
+                "cost_center": {
+                    "type": "string"
+                },
+                "tags": {
+                    "type": "object"
+                },
+                "compliance_tags": {
+                    "$ref": "#/$defs/Compliance"
+                }
+            }
+        },
+        "CiType": {
+            "enum": [
+                "Compute",
+                "Application",
+                "Database",
+                "Network",
+                "Storage",
+                "Service",
+                "User",
+                "Location",
+                "Vendor"
+            ]
+        },
+        "Filter": {
+            "type": "object",
+            "required": [
+                "property",
+                "operator",
+                "value"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "property": {
+                    "type": "string"
+                },
+                "operator": {
+                    "enum": [
+                        "eq",
+                        "neq",
+                        "gt",
+                        "lt",
+                        "contains",
+                        "in",
+                        "not_in"
+                    ]
+                },
+                "value": {}
+            }
+        },
+        "Step": {
+            "type": "object",
+            "required": [
+                "step_id",
+                "action",
+                "target",
+                "reason"
+            ],
+            "additionalProperties": false,
+            "properties": {
+                "step_id": {
+                    "type": "string"
+                },
+                "action": {
+                    "enum": [
+                        "CREATE",
+                        "UPDATE",
+                        "DELETE",
+                        "INFO",
+                        "AUDIT"
+                    ]
+                },
+                "target": {
+                    "$ref": "#/$defs/Target"
+                },
+                "reason": {
+                    "type": "string",
+                    "minLength": 10
+                },
+                "depends_on": {
+                    "type": "array",
+                    "items": {
+                        "type": "string"
+                    }
+                },
+                "requires_approval": {
+                    "type": "boolean"
+                },
+                "idempotency_key": {
+                    "type": "string"
+                },
+                "rollback_step_id": {
+                    "type": "string"
+                },
+                "timeout_seconds": {
+                    "type": "integer",
+                    "minimum": 1
+                },
+                "payload": {
+                    "$ref": "#/$defs/Payload"
+                }
+            }
+        },
+        "Target": {
+            "oneOf": [
+                {
+                    "required": [
+                        "ci_ids"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "ci_ids": {
+                            "type": "array",
+                            "minItems": 1,
+                            "items": {
+                                "type": "string"
+                            }
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "dynamic_filter"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "dynamic_filter": {
+                            "required": [
+                                "ci_type",
+                                "filters"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                                "ci_type": {
+                                    "$ref": "#/$defs/CiType"
+                                },
+                                "filters": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/$defs/Filter"
+                                    }
+                                },
+                                "exclude": {
+                                    "properties": {
+                                        "ci_ids": {
+                                            "type": "array",
+                                            "items": {
+                                                "type": "string"
+                                            }
+                                        },
+                                        "filters": {
+                                            "type": "array",
+                                            "items": {
+                                                "$ref": "#/$defs/Filter"
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "new_ci"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "new_ci": {
+                            "required": [
+                                "ci_type"
+                            ],
+                            "additionalProperties": false,
+                            "properties": {
+                                "ci_type": {
+                                    "$ref": "#/$defs/CiType"
+                                }
+                            }
+                        }
+                    }
+                }
+            ]
+        },
+        "Payload": {
+            "type": "object",
+            "oneOf": [
+                {
+                    "required": [
+                        "action",
+                        "specs",
+                        "count"
+                    ],
+                    "properties": {
+                        "action": {
+                            "const": "CREATE"
+                        },
+                        "count": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "specs": {
+                            "$ref": "#/$defs/CreateSpecs"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "action"
+                    ],
+                    "properties": {
+                        "action": {
+                            "const": "UPDATE"
+                        },
+                        "set_properties": {
+                            "$ref": "#/$defs/UpdateProps"
+                        },
+                        "operation": {
+                            "enum": [
+                                "reboot",
+                                "shutdown",
+                                "start",
+                                "add_storage",
+                                "resize",
+                                "patch",
+                                "add_relationship",
+                                "remove_relationship"
+                            ]
+                        },
+                        "operation_params": {
+                            "$ref": "#/$defs/OpParams"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "action",
+                        "archive"
+                    ],
+                    "properties": {
+                        "action": {
+                            "const": "DELETE"
+                        },
+                        "archive": {
+                            "type": "boolean"
+                        },
+                        "backup_before": {
+                            "type": "boolean"
+                        },
+                        "force": {
+                            "type": "boolean"
+                        },
+                        "notify_owner": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "action"
+                    ],
+                    "properties": {
+                        "action": {
+                            "const": "INFO"
+                        },
+                        "fields": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "output_ref": {
+                            "type": "string"
+                        },
+                        "include_relationships": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "action",
+                        "check_type"
+                    ],
+                    "properties": {
+                        "action": {
+                            "const": "AUDIT"
+                        },
+                        "check_type": {
+                            "enum": [
+                                "compliance",
+                                "ownership",
+                                "patch_status",
+                                "backup_status",
+                                "connectivity",
+                                "encryption",
+                                "sla_breach"
+                            ]
+                        },
+                        "severity_threshold": {
+                            "enum": [
+                                "LOW",
+                                "MEDIUM",
+                                "HIGH",
+                                "CRITICAL"
+                            ]
+                        },
+                        "notify_on_fail": {
+                            "type": "boolean"
+                        },
+                        "output_ref": {
+                            "type": "string"
+                        }
+                    }
+                }
+            ]
+        },
+        "CreateSpecs": {
+            "oneOf": [
+                {
+                    "required": [
+                        "ci_type",
+                        "name",
+                        "environment",
+                        "sub_type",
+                        "os_family",
+                        "owner_team"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/Meta"
+                        }
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Compute"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "sub_type": {
+                            "enum": [
+                                "Server",
+                                "VM",
+                                "Container",
+                                "Bare Metal"
+                            ]
+                        },
+                        "environment": {
+                            "$ref": "#/$defs/Env"
+                        },
+                        "status": {
+                            "enum": [
+                                "Running",
+                                "Stopped",
+                                "Building",
+                                "Terminated",
+                                "Maintenance"
+                            ]
+                        },
+                        "hostname": {
+                            "type": "string"
+                        },
+                        "ip_private": {
+                            "type": "string",
+                            "format": "ipv4"
+                        },
+                        "ip_public": {
+                            "type": [
+                                "string",
+                                "null"
+                            ],
+                            "format": "ipv4"
+                        },
+                        "os_family": {
+                            "enum": [
+                                "Linux",
+                                "Windows",
+                                "BSD"
+                            ]
+                        },
+                        "os_name": {
+                            "type": "string"
+                        },
+                        "cpu_cores": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "memory_gb": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "disk_gb": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "cloud_provider": {
+                            "$ref": "#/$defs/Cloud"
+                        },
+                        "region": {
+                            "type": "string"
+                        },
+                        "network_zone": {
+                            "enum": [
+                                "Public",
+                                "Private",
+                                "DMZ",
+                                "Management"
+                            ]
+                        },
+                        "owner_team": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "name",
+                        "environment",
+                        "owner_team",
+                        "criticality"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/Meta"
+                        }
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Application"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "environment": {
+                            "$ref": "#/$defs/Env"
+                        },
+                        "status": {
+                            "enum": [
+                                "Active",
+                                "Inactive",
+                                "Deprecated",
+                                "In Development"
+                            ]
+                        },
+                        "criticality": {
+                            "enum": [
+                                "Critical",
+                                "High",
+                                "Medium",
+                                "Low"
+                            ]
+                        },
+                        "owner_team": {
+                            "type": "string"
+                        },
+                        "sla_tier": {
+                            "$ref": "#/$defs/SlaTier"
+                        },
+                        "data_classification": {
+                            "$ref": "#/$defs/DataClass"
+                        },
+                        "repository_url": {
+                            "type": "string",
+                            "format": "uri"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "name",
+                        "environment",
+                        "engine",
+                        "owner_team"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/Meta"
+                        }
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Database"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "environment": {
+                            "$ref": "#/$defs/Env"
+                        },
+                        "engine": {
+                            "enum": [
+                                "MySQL",
+                                "PostgreSQL",
+                                "MSSQL",
+                                "Oracle",
+                                "MongoDB",
+                                "Redis",
+                                "Cassandra",
+                                "DynamoDB",
+                                "Other"
+                            ]
+                        },
+                        "storage_gb": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "owner_team": {
+                            "type": "string"
+                        },
+                        "data_classification": {
+                            "$ref": "#/$defs/DataClass"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "name",
+                        "environment",
+                        "device_type",
+                        "owner_team"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/Meta"
+                        }
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Network"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "environment": {
+                            "$ref": "#/$defs/Env"
+                        },
+                        "device_type": {
+                            "enum": [
+                                "Router",
+                                "Switch",
+                                "Firewall",
+                                "Load Balancer",
+                                "VPN Gateway",
+                                "DNS",
+                                "CDN",
+                                "Other"
+                            ]
+                        },
+                        "owner_team": {
+                            "type": "string"
+                        },
+                        "cloud_provider": {
+                            "$ref": "#/$defs/Cloud"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "name",
+                        "environment",
+                        "storage_type",
+                        "owner_team"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/Meta"
+                        }
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Storage"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "environment": {
+                            "$ref": "#/$defs/Env"
+                        },
+                        "storage_type": {
+                            "enum": [
+                                "Block",
+                                "Object",
+                                "File",
+                                "NFS",
+                                "SAN",
+                                "NAS",
+                                "Other"
+                            ]
+                        },
+                        "capacity_tb": {
+                            "type": "number",
+                            "minimum": 0
+                        },
+                        "owner_team": {
+                            "type": "string"
+                        },
+                        "data_classification": {
+                            "$ref": "#/$defs/DataClass"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "name",
+                        "environment",
+                        "service_type",
+                        "impact_tier",
+                        "service_owner"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/Meta"
+                        }
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Service"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "environment": {
+                            "$ref": "#/$defs/Env"
+                        },
+                        "service_type": {
+                            "enum": [
+                                "Business",
+                                "Technical",
+                                "Infrastructure"
+                            ]
+                        },
+                        "impact_tier": {
+                            "$ref": "#/$defs/SlaTier"
+                        },
+                        "service_owner": {
+                            "type": "string"
+                        },
+                        "sla_target_uptime_pct": {
+                            "type": "number",
+                            "minimum": 0,
+                            "maximum": 100
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "username",
+                        "email",
+                        "account_type",
+                        "owner_team"
+                    ],
+                    "allOf": [
+                        {
+                            "$ref": "#/$defs/Meta"
+                        }
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "User"
+                        },
+                        "username": {
+                            "type": "string"
+                        },
+                        "email": {
+                            "type": "string",
+                            "format": "email"
+                        },
+                        "account_type": {
+                            "enum": [
+                                "Human",
+                                "Service Account",
+                                "Bot",
+                                "Admin",
+                                "Break-Glass"
+                            ]
+                        },
+                        "owner_team": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "name",
+                        "location_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Location"
+                        },
+                        "name": {
+                            "type": "string"
+                        },
+                        "location_type": {
+                            "enum": [
+                                "Data Center",
+                                "Cloud Region",
+                                "Office",
+                                "Colocation",
+                                "Availability Zone",
+                                "Other"
+                            ]
+                        },
+                        "cloud_provider": {
+                            "enum": [
+                                "AWS",
+                                "GCP",
+                                "Azure",
+                                "On-Prem",
+                                "Other",
+                                null
+                            ]
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type",
+                        "vendor_name",
+                        "vendor_type",
+                        "primary_contact_email"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Vendor"
+                        },
+                        "vendor_name": {
+                            "type": "string"
+                        },
+                        "vendor_type": {
+                            "enum": [
+                                "Hardware",
+                                "Software",
+                                "Cloud",
+                                "Managed Service",
+                                "Consulting",
+                                "Other"
+                            ]
+                        },
+                        "primary_contact_email": {
+                            "type": "string",
+                            "format": "email"
+                        },
+                        "risk_rating": {
+                            "enum": [
+                                "Low",
+                                "Medium",
+                                "High",
+                                "Critical"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        "UpdateProps": {
+            "oneOf": [
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Compute"
+                        },
+                        "status": {
+                            "enum": [
+                                "Running",
+                                "Stopped",
+                                "Building",
+                                "Terminated",
+                                "Maintenance"
+                            ]
+                        },
+                        "cpu_cores": {
+                            "type": "integer"
+                        },
+                        "memory_gb": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Application"
+                        },
+                        "status": {
+                            "enum": [
+                                "Active",
+                                "Inactive",
+                                "Deprecated",
+                                "In Development"
+                            ]
+                        },
+                        "version": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Database"
+                        },
+                        "status": {
+                            "enum": [
+                                "Available",
+                                "Stopped",
+                                "Maintenance",
+                                "Failed",
+                                "Creating"
+                            ]
+                        },
+                        "storage_gb": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Network"
+                        },
+                        "status": {
+                            "enum": [
+                                "Active",
+                                "Inactive",
+                                "Maintenance",
+                                "Degraded"
+                            ]
+                        },
+                        "bandwidth_mbps": {
+                            "type": "integer"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Storage"
+                        },
+                        "status": {
+                            "enum": [
+                                "Active",
+                                "Inactive",
+                                "Degraded",
+                                "Full"
+                            ]
+                        },
+                        "capacity_tb": {
+                            "type": "number"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Service"
+                        },
+                        "status": {
+                            "enum": [
+                                "Operational",
+                                "Degraded",
+                                "Outage",
+                                "Maintenance"
+                            ]
+                        },
+                        "service_owner": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "User"
+                        },
+                        "status": {
+                            "enum": [
+                                "Active",
+                                "Inactive",
+                                "Locked",
+                                "Pending"
+                            ]
+                        },
+                        "mfa_enabled": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Location"
+                        },
+                        "status": {
+                            "enum": [
+                                "Active",
+                                "Decommissioned",
+                                "Planned"
+                            ]
+                        },
+                        "address": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "ci_type"
+                    ],
+                    "properties": {
+                        "ci_type": {
+                            "const": "Vendor"
+                        },
+                        "status": {
+                            "enum": [
+                                "Active",
+                                "Inactive",
+                                "Under Review",
+                                "Blacklisted"
+                            ]
+                        },
+                        "risk_rating": {
+                            "enum": [
+                                "Low",
+                                "Medium",
+                                "High",
+                                "Critical"
+                            ]
+                        }
+                    }
+                }
+            ]
+        },
+        "OpParams": {
+            "oneOf": [
+                {
+                    "required": [
+                        "cpu_cores",
+                        "memory_gb"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "cpu_cores": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "memory_gb": {
+                            "type": "integer",
+                            "minimum": 1
+                        },
+                        "disk_gb": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "add_gb"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "add_gb": {
+                            "type": "integer",
+                            "minimum": 1
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "relationship_type",
+                        "target_ci_id"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "relationship_type": {
+                            "enum": [
+                                "ADMINISTERS",
+                                "ATTACHED_TO",
+                                "CONNECTED_TO",
+                                "DEPENDS_ON",
+                                "LOCATED_AT",
+                                "OWNS",
+                                "PROVIDED_BY",
+                                "ROUTES_TO",
+                                "RUNS_ON",
+                                "USES"
+                            ]
+                        },
+                        "target_ci_id": {
+                            "type": "string"
+                        }
+                    }
+                },
+                {
+                    "required": [
+                        "patch_ids"
+                    ],
+                    "additionalProperties": false,
+                    "properties": {
+                        "patch_ids": {
+                            "type": "array",
+                            "items": {
+                                "type": "string"
+                            }
+                        },
+                        "reboot_after": {
+                            "type": "boolean"
+                        }
+                    }
+                },
+                {
+                    "type": "object",
+                    "additionalProperties": false
+                }
+            ]
+        }
+    }
+}

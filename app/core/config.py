@@ -30,6 +30,9 @@ os.environ["LANGSMITH_TRACING"] = settings.LANGSMITH_TRACING
 os.environ["LANGSMITH_ENDPOINT"] = settings.LANGSMITH_ENDPOINT
 os.environ["LANGSMITH_API_KEY"] = settings.LANGSMITH_API_KEY
 os.environ["LANGSMITH_PROJECT"] = settings.LANGSMITH_PROJECT
+os.environ["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
+os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
+os.environ["OPENAI_BASE_URL"] = settings.OPENAI_BASE_URL
 
 # Default Voice Config fallback
 DEFAULT_VOICE_CONFIG = {

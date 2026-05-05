@@ -13,6 +13,7 @@ from app.core.helpers import (
     get_and_compile_graph, 
     format_exact_response
 )
+from app.core.token_tracker import start_tracking, get_tracker
 from app.services.voice.service import UniversalVoiceService, should_run_stt
 
 logger = logging.getLogger(__name__)
@@ -139,17 +140,28 @@ async def invoke(agent_id: str, req: InvokeReq, request: Request):
         }
         config = {"configurable": {"thread_id": req.thread_id}, "recursion_limit": 150}
 
+        # ── AOP: Start token tracking for this request ──────────
+        start_tracking()
+
         logger.debug(f"Entering graph execution for {agent_id}")
         result = await graph.ainvoke(initial_state, config=config)
         snapshot = graph.get_state(config)
+
+        # ── AOP: Collect token usage summary ────────────────────
+        tracker = get_tracker()
+        token_summary = tracker.summary() if tracker else {}
         
         if snapshot.next:
             interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
             logger.info(f"⏸️ Flow '{agent_id}' PAUSED for input at: {snapshot.next}")
-            return await format_exact_response("PAUSED", result, req, request, interrupt_data)
+            resp = await format_exact_response("PAUSED", result, req, request, interrupt_data)
+            resp["token_usage"] = token_summary
+            return resp
         
         logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully.")
-        return await format_exact_response("COMPLETED", result, req, request)
+        resp = await format_exact_response("COMPLETED", result, req, request)
+        resp["token_usage"] = token_summary
+        return resp
     except Exception as e:
         logger.error(f"❌ Invoke Error for {agent_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
@@ -172,17 +184,62 @@ async def resume(agent_id: str, req: ResumeReq, request: Request):
                 logger.debug(f"STT Result: {user_response}")
 
         config = {"configurable": {"thread_id": req.thread_id}}
+
+        # ── AOP: Start token tracking for this request ──────────
+        start_tracking()
+
         logger.debug(f"Resuming graph execution for thread: {req.thread_id}")
         result = await graph.ainvoke(Command(resume=user_response), config=config)
         snapshot = graph.get_state(config)
+
+        # ── AOP: Collect token usage summary ────────────────────
+        tracker = get_tracker()
+        token_summary = tracker.summary() if tracker else {}
         
         if snapshot.next:
             interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
             logger.info(f"⏸️ Flow '{agent_id}' PAUSED again at: {snapshot.next}")
-            return await format_exact_response("PAUSED", result, req, request, interrupt_data, final_user_message=user_response)
+            resp = await format_exact_response("PAUSED", result, req, request, interrupt_data, final_user_message=user_response)
+            resp["token_usage"] = token_summary
+            return resp
         
         logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully after resumption.")
-        return await format_exact_response("COMPLETED", result, req, request, final_user_message=user_response)
+        resp = await format_exact_response("COMPLETED", result, req, request, final_user_message=user_response)
+        resp["token_usage"] = token_summary
+        return resp
+
+    except (KeyError, ValueError) as e:
+        # ✅ Stale checkpoint — saved by an older compiled graph whose node IDs
+        # no longer exist (e.g. AgentFlow_node-1024 was inlined and removed).
+        # Tell the client to start a new session instead of crashing with a 500.
+        err = str(e)
+        if any(k in err for k in ["AgentFlow", "node", "branch", "target", "condition"]):
+            logger.warning(
+                f"⚠️  Stale checkpoint for thread '{req.thread_id}': {err}. "
+                "Advising client to start a new session."
+            )
+            return await format_exact_response(
+                "PAUSED",
+                {},
+                req,
+                request,
+                interrupt_data={
+                    "node_id":    "system",
+                    "node_name":  "System",
+                    "node_type":  "inputs",
+                    "input_type": "text",
+                    "question":   (
+                        "This session is outdated due to a system update. "
+                        "Please start a new conversation."
+                    ),
+                    "options": {},
+                },
+                final_user_message=user_response,
+            )
+        # Not a stale checkpoint — re-raise as a real error
+        logger.error(f"❌ Resume Error for {agent_id}: {err}", exc_info=True)
+        raise HTTPException(status_code=500, detail=err)
+
     except Exception as e:
         logger.error(f"❌ Resume Error for {agent_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
