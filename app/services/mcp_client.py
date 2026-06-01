@@ -121,6 +121,7 @@ class UnifiedMCPClient:
         for tool in self.server_tools[server_id]:
             schema = getattr(tool, "inputSchema", {}) or {}
             props = schema.get("properties", {})
+            required_args = schema.get("required", [])
 
             # Build arguments object with defaults from the tool's input schema
             arguments_value = {}
@@ -129,6 +130,35 @@ class UnifiedMCPClient:
                 arguments_value[key] = details.get(
                     "default", _TYPE_DEFAULTS.get(param_type, "")
                 )
+
+            # ── LLM-friendly flat argument reference ──────────────────────
+            # Places argument names at the TOP LEVEL so the LLM doesn't
+            # have to dig through specifications.original_schema.properties.
+            argument_schema = {}
+            sig_parts = []
+            for key, details in props.items():
+                is_req = key in required_args
+                arg_type = details.get("type", "string")
+                arg_desc = details.get("description", "")
+                arg_default = details.get("default")
+
+                argument_schema[key] = {
+                    "type": arg_type,
+                    "required": is_req,
+                    "description": arg_desc,
+                }
+                if arg_default is not None:
+                    argument_schema[key]["default"] = arg_default
+
+                # Build human-readable signature part
+                if is_req:
+                    sig_parts.append(f"{key}: {arg_type} [REQUIRED]")
+                elif arg_default is not None:
+                    sig_parts.append(f"{key}: {arg_type} = {json.dumps(arg_default)}")
+                else:
+                    sig_parts.append(f"{key}: {arg_type}")
+
+            tool_signature = f"{tool.name}({', '.join(sig_parts)})"
 
             # Standardized input parameters matching Agent Studio node format
             input_params = [
@@ -143,6 +173,9 @@ class UnifiedMCPClient:
                 "name": tool.name,
                 "displayName": tool.name,
                 "type": "MCP Tool",
+                "server_id": server_id,
+                "tool_signature": tool_signature,
+                "argument_schema": argument_schema,
                 "tags": ["Run tools from MCP servers", "External tools caller"],
                 "description": f"Runs the {tool.name} tool from MCP Server. {tool.description or ''}",
                 "specifications": {
