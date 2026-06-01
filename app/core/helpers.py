@@ -92,7 +92,8 @@ async def format_exact_response(status, result_state, req, request, interrupt_da
 
     if req.voice_enabled and agent_response:
         v_config      = req.voice_config.model_dump() if req.voice_config else DEFAULT_VOICE_CONFIG
-        has_voice_in  = bool(req.userInput and req.userInput.voiceInput)
+        top_level_voice = getattr(req, "voiceInput", None)
+        has_voice_in  = bool((req.userInput and req.userInput.voiceInput) or top_level_voice)
         if should_run_tts(v_config, has_voice_in):
             voice_svc: UniversalVoiceService = request.app.state.voice_service
             b64_audio = await voice_svc.process_tts(

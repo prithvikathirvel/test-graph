@@ -28,7 +28,9 @@ class ResumeReq(BaseModel):
     session_id: str
     thread_id: str
     node_id: str
-    user_response: Any
+    user_response: Optional[Any] = None
+    # Backward-compat for clients sending voice payload at top-level.
+    voiceInput: Optional[str] = None
     input_type: str = "text"
     voice_config: Optional[VoiceConfig] = None
     voice_enabled: bool = False

@@ -174,14 +174,22 @@ async def resume(agent_id: str, req: ResumeReq, request: Request):
         graph, _ = await get_and_compile_graph(agent_id, request)
         
         user_response = req.user_response
-        if req.voice_enabled and req.userInput and req.userInput.voiceInput:
+        voice_input = (req.userInput.voiceInput if req.userInput and req.userInput.voiceInput else req.voiceInput)
+
+        if req.voice_enabled and voice_input:
             v_config = req.voice_config.model_dump() if req.voice_config else DEFAULT_VOICE_CONFIG
             if should_run_stt(v_config, has_voice=True):
                 voice_svc: UniversalVoiceService = request.app.state.voice_service
                 provider = v_config.get("stt_provider", "whisper")
                 logger.info(f"Processing STT via {provider}...")
-                user_response = await voice_svc.process_stt(req.userInput.voiceInput, provider)
+                user_response = await voice_svc.process_stt(voice_input, provider)
                 logger.debug(f"STT Result: {user_response}")
+
+        if user_response is None:
+            raise HTTPException(
+                status_code=422,
+                detail="user_response is required when no voiceInput is provided.",
+            )
 
         config = {"configurable": {"thread_id": req.thread_id}}
 
