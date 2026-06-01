@@ -1,20 +1,7 @@
 {
-  "name": "CMDB Execution Plan Generator",
+  "name": "CMDB Execution Plan Generator(U1)",
   "description": "Decomposes complex user queries into sub-tasks using Turtle RDF ontology, generates CMDB execution plans with asset-resolved details, injects suitable MCP tools with pre-filled arguments, presents human-readable plans for confirmation, and executes confirmed MCP tool calls.",
   "type": "flow",
-  "version": "2.0.0",
-  "status": "active",
-  "isPublic": true,
-  "createdBy": "Admin",
-  "agent_id": "cmdb_exec_plan_v2",
-  "id": "cmdb_exec_plan_v2",
-  "inputs": [
-    {
-      "key": "CHAT_QUERY",
-      "value": "",
-      "type": "text"
-    }
-  ],
   "graphSpec": {
     "nodes": [
       {
@@ -29,17 +16,17 @@
         "outputParameters": []
       },
       {
-        "node_id": "Ask_Customer_ID_2",
+        "node_id": "Question Node_node-1777351912259-ka58u5nlm",
         "name": "Question Node",
         "displayName": "Ask Customer ID",
         "type": "inputs",
-        "description": "Prompts user for their Customer ID",
+        "description": "Prompts the user to enter their Customer ID to begin.",
         "interrupt": true,
         "next": [],
         "inputParameters": [
           {
             "key": "question_text",
-            "value": "\ud83d\udc4b Welcome to Sify IT Support!\n\nPlease enter your Customer ID to continue:\n(Sample customers: 101, 102, 103, 104, 105, 106, 107, 108, 109, 110)",
+            "value": "\u003Cdiv style='font-family:sans-serif;'\u003E\u003Ch3\u003E👋 Welcome to Sify IT Support!\u003C/h3\u003E\u003Cp\u003EPlease enter your \u003Cstrong\u003ECustomer ID\u003C/strong\u003E to continue\u003C/p\u003E\u003C/div\u003E",
             "type": "string"
           },
           {
@@ -52,6 +39,168 @@
           {
             "key": "output",
             "value": "customer_id",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "API caller_node-1777352037603-pfck9nfke",
+        "name": "API caller",
+        "displayName": "Fetch User Profile",
+        "type": "tool",
+        "description": "Fetches the user profile from the backend API using the entered Customer ID.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "method",
+            "value": "GET",
+            "type": "text"
+          },
+          {
+            "key": "url",
+            "value": "https://apidev.sifymodernization.digital/ai/api/agent-studio/users/{{customer_id}}",
+            "type": "text"
+          },
+          {
+            "key": "params",
+            "value": {},
+            "type": "object"
+          },
+          {
+            "key": "data",
+            "value": {},
+            "type": "object"
+          },
+          {
+            "key": "headers",
+            "value": {},
+            "type": "object"
+          },
+          {
+            "key": "timeout",
+            "value": 10,
+            "type": "number"
+          },
+          {
+            "key": "retries",
+            "value": 1,
+            "type": "number"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_profile",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "node_id": "Decision Node_node-1777352026299-vsvz3w4dz",
+        "name": "Decision Node",
+        "displayName": "User Profile Exists?",
+        "type": "conditions",
+        "description": "Routes to profile review if found, or back to ID entry if not found.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{user_profile}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "not_equals",
+                "comparisonValue": "{}",
+                "nextNode": "Question Node_node-1777352083305-ppsre7sz4"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "{}",
+                "nextNode": "Question Node_node-1777351912259-ka58u5nlm"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_profile_isempty",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Question Node_node-1777352083305-ppsre7sz4",
+        "name": "Question Node",
+        "displayName": "User Profile Review",
+        "type": "inputs",
+        "description": "Displays the found user profile and asks the user to confirm it is theirs.",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "\u003Cdiv style=\"width:100%;box-sizing:border-box;font-family:Arial,Helvetica,sans-serif;padding:2px;\"\u003E\u003Cdiv style=\"font-size:14px;font-weight:600;\"\u003E 👤 Customer Overview \u003C/div\u003E\u003Cdiv style=\"font-size:13px;line-height:1.4;color:#333;word-break:break-word;overflow-wrap:anywhere;\"\u003E\u003Cstrong\u003ECustomer ID:\u003C/strong\u003E {{user_profile.customer_id}}\u003Cbr\u003E\u003Cstrong\u003ECustomer Name:\u003C/strong\u003E {{user_profile.name}}\u003Cbr\u003E\u003Cstrong\u003EEmail:\u003C/strong\u003E {{user_profile.email}}\u003C/div\u003E\u003Cdiv style=\"font-size:12.5px;color:#555;line-height:1.4;word-break:break-word;overflow-wrap:anywhere;\"\u003EClick \u003Cstrong\u003EYes\u003C/strong\u003E to proceed or \u003Cstrong\u003ENo\u003C/strong\u003E if this is not your ID.\u003C/div\u003E\u003C/div\u003E",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {
+              "Option1": "👍Yes",
+              "Option2": "✖️No"
+            },
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "profile_review",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Decision Node_node-1777352705132-9fpsnlkxe",
+        "name": "Decision Node",
+        "displayName": "Profile Confirmed?",
+        "type": "conditions",
+        "description": "Proceeds to data fetch if profile confirmed, loops back to ID entry if not.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{profile_review}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "👍Yes",
+                "nextNode": "Fetch_Ontology_3"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "✖️No",
+                "nextNode": "Question Node_node-1777351912259-ka58u5nlm"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "profile_review_result",
             "type": "string"
           }
         ]
@@ -72,7 +221,7 @@
           },
           {
             "key": "url",
-            "value": "http://1.6.37.35/cmdb/schema?format=turtle",
+            "value": "http://1.6.37.35/cmdb/schema?response_type=turtle",
             "type": "text"
           },
           {
@@ -110,12 +259,7 @@
           },
           {
             "key": "data",
-            "value": {
-              "query": "MATCH (c:Customer)-[r:OWNS]->(asset) WHERE c.customer_id = $cust_id OR c.id = toString($cust_id) RETURN c AS customer, labels(asset) AS asset_type, asset.name AS asset_name, asset.status AS asset_status, asset.ip_address AS ip_address, asset.hostname AS hostname, asset.environment AS environment, asset.ci_type AS ci_type, asset.sub_type AS sub_type, asset ORDER BY labels(asset), asset.name",
-              "parameters": {
-                "cust_id": "{{customer_id}}"
-              }
-            },
+            "value": "{   \"query\": \"MATCH (n)-[r]-\u003E(m) WHERE (n)-[:BELONGS_TO]-\u003E(:Customer {id:$cust_id}) AND NOT (n:ActionDefinition) AND NOT (m:ActionDefinition) AND NOT type(r) IN ['HAS_CAPABILITY','APPLIES_TO','IS_A'] RETURN n, r, m\",   \"parameters\": {     \"cust_id\": \"{{customer_id}}\"   },   \"response_type\": \"turtle\" }",
             "type": "object"
           },
           {
@@ -131,6 +275,94 @@
             "type": "text"
           }
         ]
+      },
+      {
+        "node_id": "Check_Assets_Empty_5a",
+        "name": "Decision Node",
+        "displayName": "Validate Assets Retrieved",
+        "type": "conditions",
+        "description": "FALLBACK: Checks if customer_assets is empty or null to prevent errors.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{customer_assets}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equals",
+                "comparisonValue": "",
+                "nextNode": "Notify_No_Assets_5b"
+              },
+              {
+                "operator": "not_equals",
+                "comparisonValue": "",
+                "nextNode": "Discover_Tools_5"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Notify_No_Assets_5b",
+        "name": "LLM invoker",
+        "displayName": "Notify No Assets Found",
+        "type": "agent",
+        "description": "Informs user that no assets were found for the ID and ends flow.",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "llama 3",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "customer_id",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Inform the user that no assets were found for the provided Customer ID: {{customer_id}}.\n\n### Instructions:\n1. Output valid HTML only.\n2. Use \u003Cdiv\u003E, \u003Cstrong\u003E, \u003Cbr\u003E tags. Do not use excessive newlines.\n3. Ask them to verify their ID and restart.\n4. Tone: Polite and helpful.\n\nExample:\n\u003Cdiv\u003E\u003Cstrong\u003E⚠️ No Assets Found\u003C/strong\u003E\u003Cbr\u003EWe could not find any devices registered under ID: \u003Cb\u003E{{customer_id}}\u003C/b\u003E.\u003Cbr\u003EPlease verify your ID and try again.\u003C/div\u003E",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "error_message",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "End_Fail_5c",
+        "name": "End Node",
+        "displayName": "End (No Assets)",
+        "type": "output",
+        "description": "Ends flow if assets are missing.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "final_input",
+            "value": "{{error_message}}",
+            "type": "string"
+          }
+        ],
+        "outputParameters": []
       },
       {
         "node_id": "Discover_Tools_5",
@@ -170,13 +402,13 @@
         "name": "Question Node",
         "displayName": "Ask User's Complex Query",
         "type": "inputs",
-        "description": "Asks the user for their complex query to decompose into sub-tasks",
+        "description": "Asks the user for their complex query to decompose into sub-tasks.",
         "interrupt": true,
         "next": [],
         "inputParameters": [
           {
             "key": "question_text",
-            "value": "\ud83c\udfaf Please describe ALL the tasks or issues you need help with today.\n\nI'll break them down, resolve your asset details from CMDB, generate execution plans, match tools, and execute after your confirmation.\n\n\ud83d\udca1 Example: \"Reboot all servers except db server, add one more server for the payment app, and audit compliance on all databases\"",
+            "value": "\u003Cdiv style='font-family:sans-serif;'\u003E\u003Cp\u003EHow can I help you today?\u003C/p\u003E\u003Cp style='color:#666;font-size:0.9em;'\u003E👉 Example: \"Reboot app servers and audit compliance on databases\"\u003C/p\u003E\u003C/div\u003E",
             "type": "string"
           },
           {
@@ -204,7 +436,7 @@
         "inputParameters": [
           {
             "key": "Model",
-            "value": "gemini-2.5-flash",
+            "value": "llama 3",
             "type": "text"
           },
           {
@@ -224,7 +456,7 @@
           },
           {
             "key": "Prompt",
-            "value": "You are a CMDB Task Decomposer. Break a complex user request into individual, actionable sub-tasks.\n\n### User Request:\n{{user_query}}\n\n### Customer's CMDB Assets (actual instances):\n{{customer_assets}}\n\n### CMDB Ontology (Turtle RDF):\n{{cmdb_ontology}}\n\n### Available Tools (for awareness of what can be automated):\n{{available_tools}}\n\n### Instructions:\n1. Break the user's request into the smallest independent sub-tasks.\n2. **CRITICAL: Resolve generic asset references to SPECIFIC asset names from the customer's CMDB data.**\n   - \"all servers\" \u2192 list each server by name from customer_assets\n   - \"reboot all servers except db server\" \u2192 \"reboot app-modernize-server, web-frontend-01\" (excluding database-related servers)\n   - \"my application\" \u2192 resolve to the actual application name(s)\n3. Each sub-task should map to a single action type (CREATE, UPDATE, DELETE, INFO, or AUDIT).\n4. Use the ontology to understand CI types and relationships.\n5. Set priority based on impact: critical (outage/security), high (performance), medium (changes), low (info/audit).\n\n### Output Format:\n{\n  \"sub_tasks\": [\n    {\n      \"task_id\": \"task-1\",\n      \"original_text\": \"reboot all servers except db server\",\n      \"description\": \"Reboot servers: app-modernize-server (10.0.1.5), web-frontend-01 (10.0.1.10) \u2014 excluding database servers\",\n      \"intent\": \"server_reboot\",\n      \"entities\": [\"app-modernize-server\", \"web-frontend-01\"],\n      \"ci_types\": [\"Compute\"],\n      \"priority\": \"high\"\n    }\n  ],\n  \"total_tasks\": 1\n}\n\nReturn ONLY the JSON object.",
+            "value": "You are a CMDB Task Decomposer. Your sole responsibility is to parse a user request into validated, atomic sub-tasks mapped against a live CMDB inventory.  ═══════════════════════════════════════════ INPUTS ═══════════════════════════════════════════ User Request:      {{user_query}} CMDB Assets:       {{customer_assets}} CMDB Ontology:     {{cmdb_ontology}}  ═══════════════════════════════════════════ PROCESSING RULES — EXECUTE IN ORDER ═══════════════════════════════════════════  STEP 1 — ASSET VALIDATION (HARD GATE)   • Every asset referenced in {{user_query}} MUST exactly match a name in {{customer_assets}}.   • If ANY asset does not exist → ABORT immediately:       clarification_needed: true       sub_tasks: []       clarification_reason: \"Asset '[Name]' not found. Valid assets include: [list 3–5 examples].\"   • Do NOT hallucinate, infer, or substitute asset names. Ever.  STEP 2 — COMPLETENESS CHECK   Required fields per action type:     CREATE → asset type, name, environment, configuration details     UPDATE → exact asset name + field to update + new target value     DELETE → exact asset name     INFO   → identifiable asset reference     AUDIT  → scope (asset name or group)    If ANY required field is absent → DO NOT proceed:       clarification_needed: true       sub_tasks: []       clarification_reason: \"Missing: [specify exactly what is absent and why it is needed]\"    Examples that MUST trigger clarification:     \"Create a server\"           → missing name, environment, config     \"Update server\"             → missing asset name, field, and value     \"Update memory of server-1\" → missing target value     \"Delete database\"           → missing which database     \"Reboot a server\"           → missing which server  STEP 3 — GROUP RESOLUTION (No Clarification Needed)   If the user refers to a group (\"all servers\", \"my databases\"):   → Resolve silently. Find ALL matching assets in {{customer_assets}}.   → Add each resolved name to the entities array.   → Do NOT ask for clarification.  STEP 4 — TASK DECOMPOSITION (Only if Steps 1–3 pass)   Break the request into the smallest independent sub-tasks.   Each sub-task must:     • Map to exactly one action type: CREATE | UPDATE | DELETE | INFO | AUDIT     • Use only resolved asset names from {{customer_assets}} (no generic terms)     • Include a clear, operator-readable description     • Set is_last_task: true ONLY on the final task; false on all others  ═══════════════════════════════════════════ OUTPUT — JSON ONLY. No prose. No markdown. ═══════════════════════════════════════════ {   \"clarification_needed\": boolean,   \"clarification_reason\": \"string | null\",   \"sub_tasks\": [     {       \"task_id\": \"task-1\",       \"original_text\": \"verbatim fragment from user input\",       \"description\": \"clear, operator-readable action\",       \"intent\": \"CREATE | UPDATE | DELETE | INFO | AUDIT\",       \"entities\": [\"resolved-asset-name\"],       \"ci_types\": [\"CI_Type_from_ontology\"],       \"priority\": \"low | medium | high\",       \"is_last_task\": boolean     }   ],   \"total_tasks\": number,   \"options\": {     // If clarification_needed = true  → omit Option1     // If clarification_needed = false → include all three     \"Option1\": \"✅ confirm\",     \"Option2\": \"✏️ change\",     \"Option3\": \"❌ cancel\"   } }",
             "type": "text"
           }
         ],
@@ -237,17 +469,194 @@
         ]
       },
       {
+        "node_id": "Format_Breakdown_HTML_7a",
+        "name": "LLM invoker",
+        "displayName": "Format Breakdown as HTML",
+        "type": "agent",
+        "description": "Converts decomposed tasks into a clean HTML list for user review.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "llama 3",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "decomposed_tasks",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Convert the JSON task breakdown into a readable HTML response.\n\nInput Data: {{decomposed_tasks}}\n\nInstructions:\nOutput MUST be pure HTML ONLY\n❌ Do NOT include markdown\n❌ Do NOT include any explanation text outside HTML\nAllowed tags ONLY: \u003Cdiv\u003E, \u003Ch3\u003E, \u003Cul\u003E, \u003Cli\u003E, \u003Cb\u003E, \u003Cbr\u003E, \u003Cp\u003E, \u003Cspan\u003E\n❗ STRICT: Do NOT use \\n. Do NOT insert line breaks. Use \u003Cbr\u003E ONLY.\n\n🔴 CASE 1: clarification_needed = true\n- DO NOT render task list\n- MUST show clarification reason clearly\n- MUST strictly follow this structure:\n\u003Cdiv\u003E\u003Ch3\u003E⚠️ Clarification Required\u003C/h3\u003E\u003Cp\u003E\u003Cb\u003EIssue:\u003C/b\u003E {clarification_reason}\u003C/p\u003E\u003Cp\u003EPlease refine your request with the missing details.\u003C/p\u003E\u003C/div\u003E\n\n🟢 CASE 2: clarification_needed = false\n- Render tasks list with strict numbering\n- Structure: \u003Cdiv\u003E\u003Ch3\u003E📋 Your Request\u003C/h3\u003E\u003Cul\u003E{TASK_ITEMS}\u003C/ul\u003E\u003C/div\u003E\n\n🔹 TASK ITEM FORMAT (MANDATORY)\nEach task MUST follow:\n\u003Cli\u003E\u003Cb\u003ETask {index} - {ACTION}\u003C/b\u003E: {description} (Targets: {entity1, entity2})\u003C/li\u003E\n{index} starts from 1 and increments. Order must match input array order.\n\n🔹 ACTION Mapping: CREATE → Create, UPDATE → Update, DELETE → Delete, INFO → Get Info, AUDIT → Audit\n\n🔹 OPTIONS SECTION (ALWAYS REQUIRED)\nAppend EXACTLY at the end:\n\u003Cdiv style='margin-top:15px;display: inline;'\u003E\u003Cp\u003EShould we proceed further?\u003C/p\u003E\u003Cp\u003E{OPTIONS}\u003C/p\u003E\u003C/div\u003E\n\n🔹 OPTIONS RULE (STRICT FILTER)\nRender ONLY options present in input JSON:\n- If Option1 exists → ✅ \u003Cb\u003EType 'confirm'\u003C/b\u003E to proceed.\u003Cbr\u003E\n- If Option2 exists → ✏️ \u003Cb\u003EType 'change'\u003C/b\u003E and explain what needs fixing.\u003Cbr\u003E\n- If Option3 exists → 🛑 \u003Cb\u003EType 'cancel'\u003C/b\u003E to stop.\n\n❗ HARD FAIL CONDITIONS\n❌ No markdown ❌ No missing \u003Cdiv\u003E wrapper ❌ No plain text outside HTML ❌ No skipping options ❌ No rendering tasks when clarification_needed = true ❌ No missing task numbering ❌ No extra text",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "html_breakdown",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Confirm_Breakdown_7b",
+        "name": "Question Node",
+        "displayName": "Confirm Task Breakdown",
+        "type": "inputs",
+        "description": "Asks user to validate the decomposed list before planning.",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "{{html_breakdown}}",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": "{{decomposed_tasks.options}}",
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "breakdown_response",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Classify_Breakdown_Response_7c",
+        "name": "LLM invoker",
+        "displayName": "Classify Breakdown Response",
+        "type": "agent",
+        "description": "Determines if user accepted the breakdown, needs changes, or cancelled.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "llama 3",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "breakdown_response",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Classify the user's response to the breakdown confirmation.\n\n### User Response:\n{{breakdown_response}}\n\n### Output:\n{\n  \"status\": \"confirmed\" | \"modify\" | \"cancel\",\n  \"notes\": \"any changes requested or null\"\n}\n\nReturn ONLY JSON.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "breakdown_status",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Decision_Breakdown_Valid_7d",
+        "name": "Decision Node",
+        "displayName": "Validate Breakdown",
+        "type": "conditions",
+        "description": "Routes based on breakdown confirmation.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{breakdown_status.status}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "confirmed",
+                "nextNode": "Iterator_Tasks_8"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "modify",
+                "nextNode": "Ask_Clarification_7e"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "cancel",
+                "nextNode": "End_Output_21"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Ask_Clarification_7e",
+        "name": "Question Node",
+        "displayName": "Ask Clarification",
+        "type": "inputs",
+        "description": "Asks user to rephrase or provide corrections if they want to modify the breakdown. Output stored as refined_query to avoid overwriting the original user_query.",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "\u003Cdiv\u003E\u003Cp\u003E🔧 \u003Cstrong\u003EModification Requested\u003C/strong\u003E\u003C/p\u003E\u003Cp\u003EPlease describe your corrections or provide the updated request below:\u003C/p\u003E\u003C/div\u003E",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_query",
+            "type": "string"
+          }
+        ]
+      },
+      {
         "node_id": "Iterator_Tasks_8",
         "name": "Iterator Node",
         "displayName": "Loop Through Sub-Tasks",
         "type": "iterator",
-        "description": "Outer iterator: loops through each decomposed sub-task for plan generation, tool injection, confirmation, and execution",
+        "description": "Outer iterator: loops through each decomposed sub-task for plan generation, tool injection, confirmation, and execution.",
         "interrupt": false,
         "next": [
-          "Generate_Plan_9",
+          "Fetch_Action_Capabilities_8a",
+          "End_Output_21",
+          "Fetch_Action_Capabilities_8a",
           "End_Output_21"
         ],
-        "loopPath": "Generate_Plan_9",
+        "loopPath": "Fetch_Action_Capabilities_8a",
         "completePath": "End_Output_21",
         "inputParameters": [
           {
@@ -264,17 +673,55 @@
         "outputParameters": []
       },
       {
-        "node_id": "Generate_Plan_9",
+        "node_id": "Fetch_Action_Capabilities_8a",
+        "name": "API caller",
+        "displayName": "Fetch Action Capabilities from CMDB",
+        "type": "tool",
+        "description": "Queries CMDB for all allowed actions mapped to the current task's CI type.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "method",
+            "value": "POST",
+            "type": "text"
+          },
+          {
+            "key": "url",
+            "value": "http://1.6.37.35/cmdb/query",
+            "type": "text"
+          },
+          {
+            "key": "data",
+            "value": "{ \"query\": \"MATCH (t:Type {name: $ci_type})\u003C-[:APPLIES_TO]-(a:ActionDefinition) RETURN a\", \"parameters\": { \"ci_type\": \"{{current_task.ci_types[0]}}\" }, \"response_type\": \"turtle\" }",
+            "type": "object"
+          },
+          {
+            "key": "timeout",
+            "value": 10,
+            "type": "number"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "ci_action_capabilities",
+            "type": "text"
+          }
+        ]
+      },
+      {
+        "node_id": "Validate_Action_Params_8b",
         "name": "LLM invoker",
-        "displayName": "Generate Execution Plan",
+        "displayName": "Validate Action Parameters",
         "type": "agent",
-        "description": "LLM Call 2 (per sub-task): Generates a CMDB execution plan with asset-resolved details using Turtle RDF ontology.",
+        "description": "Validates if the user provided all required parameters for the requested action based on CMDB action definitions.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
           {
             "key": "Model",
-            "value": "gemini-2.5-flash",
+            "value": "llama 3",
             "type": "text"
           },
           {
@@ -294,7 +741,159 @@
           },
           {
             "key": "Prompt",
-            "value": "You are a CMDB Execution Planner. Your ONLY output is a valid JSON execution plan.\n\n### Current Sub-Task:\n{{current_task}}\n\n### Customer's CMDB Assets:\n{{customer_assets}}\n\n### CMDB Ontology (Turtle RDF):\n{{cmdb_ontology}}\n\n### Execution Plan Schema:\n{\n  \"plan_id\": \"uuid\",\n  \"created_by\": \"string\",\n  \"dry_run\": false,\n  \"on_failure\": \"ABORT_ALL|CONTINUE|ROLLBACK\",\n  \"steps\": [{\n    \"step_id\": \"step-N\",\n    \"action\": \"CREATE|UPDATE|DELETE|INFO|AUDIT\",\n    \"target\": ONE_OF(\n      {\"ci_ids\": [\"ci-xxx\"]},\n      {\"dynamic_filter\": {\"ci_type\": \"Compute|Application|Database|Network|Storage|Service|User|Location|Vendor\", \"filters\": [{\"property\":\"...\", \"operator\":\"eq|neq|gt|lt|contains|in|not_in\", \"value\":\"...\"}], \"exclude?\": {\"ci_ids\":[], \"filters\":[]}}},\n      {\"new_ci\": {\"ci_type\": \"...\"}}\n    ),\n    \"reason\": \"min 10 chars\",\n    \"depends_on?\": [\"step-N\"],\n    \"requires_approval?\": true,\n    \"idempotency_key\": \"-\",\n    \"timeout_seconds?\": 60,\n    \"payload\": {\n      \"action\": \"same as step action\",\n      \"CREATE\": {\"specs\": {\"CI props from ontology\"}, \"count\": 1},\n      \"UPDATE\": {\"operation?\": \"reboot|shutdown|start|add_storage|resize|patch|add_relationship|remove_relationship\", \"operation_params?\": {}, \"set_properties?\": {}},\n      \"DELETE\": {\"archive\": true, \"backup_before?\": true, \"force?\": false, \"notify_owner?\": true},\n      \"INFO\":   {\"fields?\": [\"prop1\"], \"output_ref?\": \"var_name\", \"include_relationships?\": false},\n      \"AUDIT\":  {\"check_type\": \"compliance|ownership|patch_status|backup_status|connectivity|encryption|sla_breach\", \"severity_threshold?\": \"LOW|MEDIUM|HIGH|CRITICAL\", \"notify_on_fail?\": true}\n    }\n  }]\n}\n\n### Rules:\n1. Never output prose \u2014 JSON only.\n2. Always begin with an INFO step to resolve CI names to ci_ids. Never hardcode ci_ids.\n3. Use target.new_ci for CREATE steps. Never use ci_ids or dynamic_filter for CREATE.\n4. Set depends_on so steps execute in safe order.\n5. Set requires_approval: true for CREATE or DELETE steps.\n6. Set on_failure: \"ROLLBACK\" for plans with DELETE or multi-step CREATE.\n7. Set idempotency_key: \"-\" on every step.\n8. The reason field must quote the original user request intent.\n9. Use on_failure: \"ABORT_ALL\" for read-only (INFO/AUDIT-only) plans.\n10. Inject resolved asset names from customer_assets into targets and payloads.\n11. Include only payload fields relevant to the action type.\n\nReturn ONLY the execution plan JSON.",
+            "value": "You are a CMDB Action Parameter Validator.\n\n### Current Task:\n{{current_task}}\n\n### CMDB Action Capabilities (Turtle RDF):\n{{ci_action_capabilities}}\n\n### Instructions:\n1. Identify the action definition from the CMDB capabilities that matches the user's intent (e.g., if the user wants to reboot, find the ActionDefinition for 'reboot').\n2. Extract the properties and parameters defined for this ActionDefinition (these represent the allowed parameters and their requirements).\n3. Check the user's task description and entities to verify whether they have provided all the parameters required by this action.\n4. If ANY required parameter is missing, set \"clarification_needed\": true, and set \"clarification_reason\" describing exactly what parameter is missing.\n5. If all required parameters are present, set \"clarification_needed\": false, and \"clarification_reason\": null.\n\nOutput JSON Format:\n{\n  \"clarification_needed\": boolean,\n  \"clarification_reason\": \"string or null\"\n}",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "action_validation_result",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Decision_Action_Valid_8c",
+        "name": "Decision Node",
+        "displayName": "Is Action Parameter Valid?",
+        "type": "conditions",
+        "description": "Routes based on whether action parameters are validated.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{action_validation_result.clarification_needed}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "true",
+                "nextNode": "Ask_Action_Clarification_8d"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": true,
+                "nextNode": "Ask_Action_Clarification_8d"
+              },
+              {
+                "operator": "not_equals",
+                "comparisonValue": "true",
+                "nextNode": "Generate_Plan_9"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Ask_Action_Clarification_8d",
+        "name": "Question Node",
+        "displayName": "Ask Action Parameter Clarification",
+        "type": "inputs",
+        "description": "Asks the user for the missing parameters required by the action.",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "\u003Cdiv style='padding:10px;'\u003E\u003Ch3\u003E⚠️ Missing Parameters\u003C/h3\u003E\u003Cp\u003E\u003Cb\u003EIssue:\u003C/b\u003E {{action_validation_result.clarification_reason}}\u003C/p\u003E\u003Cp\u003EPlease provide the missing details below:\u003C/p\u003E\u003C/div\u003E",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_parameter_clarification",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Update_Task_With_Params_8e",
+        "name": "LLM invoker",
+        "displayName": "Update Task Parameters",
+        "type": "agent",
+        "description": "Updates the current sub-task JSON with the newly provided parameters.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "llama 3",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "user_parameter_clarification",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "Update the current sub-task details using the user's parameter clarification.\n\n### Current Sub-Task:\n{{current_task}}\n\n### User's Clarification:\n{{user_parameter_clarification}}\n\n### Instructions:\n1. Incorporate the user's clarification into the sub-task (e.g. updating description or properties).\n2. Maintain the exact same JSON structure.\n3. Return the COMPLETE updated sub-task JSON.\n\nReturn ONLY JSON.",
+            "type": "text"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "current_task",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Generate_Plan_9",
+        "name": "LLM invoker",
+        "displayName": "Generate Execution Plan",
+        "type": "agent",
+        "description": "LLM Call 2 (per sub-task): Generates a CMDB execution plan with asset-resolved details using Turtle RDF ontology.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "Model",
+            "value": "llama 3",
+            "type": "text"
+          },
+          {
+            "key": "chatty_mode",
+            "value": "false",
+            "type": "text"
+          },
+          {
+            "key": "Response Format",
+            "value": "json",
+            "type": "text"
+          },
+          {
+            "key": "user_message_key",
+            "value": "current_task",
+            "type": "text"
+          },
+          {
+            "key": "Prompt",
+            "value": "You are a CMDB Execution Planner. Your ONLY output is a valid JSON execution plan.\n\n### Current Sub-Task:\n{{current_task}}\n\n### Customer's CMDB Assets:\n{{customer_assets}}\n\n### CMDB Ontology (Turtle RDF):\n{{cmdb_ontology}}\n\n---\n\n### Execution Plan Schema:\n{\n  \"plan_id\": \"uuid\",\n  \"created_by\": \"string\",\n  \"dry_run\": false,\n  \"on_failure\": \"ABORT_ALL | CONTINUE | ROLLBACK\",\n  \"steps\": [{\n    \"step_id\": \"step-N\",\n    \"action\": \"CREATE | UPDATE | DELETE | INFO | AUDIT\",\n    \"target\": ONE_OF(\n      {\"ci_ids\": [\"ci-xxx\"]},\n      {\"dynamic_filter\": {\n        \"ci_type\": \"Compute | Application | Database | Network | Storage | Service | User | Location | Vendor\",\n        \"filters\": [{\"property\":\"...\", \"operator\":\"eq|neq|gt|lt|contains|in|not_in\", \"value\":\"...\"}],\n        \"exclude\": {\"ci_ids\":[], \"filters\":[]}\n      }},\n      {\"new_ci\": {\"ci_type\": \"...\"}}\n    ),\n    \"reason\": \"min 10 chars\",\n    \"depends_on\": [\"step-N\"],\n    \"requires_approval\": true,\n    \"idempotency_key\": \"-\",\n    \"timeout_seconds\": 60,\n    \"payload\": {\n      \"action\": \"CREATE | UPDATE | DELETE | INFO | AUDIT\",\n      \"CREATE\": {\"specs\": {}, \"count\": 1},\n      \"UPDATE\": {\n        \"operation\": \"reboot | shutdown | start | add_storage | resize | patch | add_relationship | remove_relationship\",\n        \"operation_params\": {},\n        \"set_properties\": {}\n      },\n      \"DELETE\": {\"archive\": true, \"backup_before\": true, \"force\": false, \"notify_owner\": true},\n      \"INFO\": {\"fields\": [\"prop\"], \"output_ref\": \"var\", \"include_relationships\": false},\n      \"AUDIT\": {\"check_type\": \"compliance | ownership | patch_status | backup_status | connectivity | encryption | sla_breach\", \"severity_threshold\": \"LOW | MEDIUM | HIGH | CRITICAL\", \"notify_on_fail\": true}\n    }\n  }]\n}\n\n---\n\n### CORE RULES (STRICT)\n1. Output JSON only. No explanations.\n2. ALWAYS start with an INFO step to resolve CI names → ci_ids.\n3. NEVER hardcode ci_ids. Always use INFO output_ref.\n4. CREATE → use target.new_ci only.\n5. All steps must include idempotency_key = \"-\".\n6. Reason must reflect user intent (min 10 chars).\n7. on_failure: \"ROLLBACK\" for DELETE/multi-step CREATE, \"ABORT_ALL\" for read-only, \"CONTINUE\" for independent operations.\n\n### CRITICAL EXECUTION RULES\n8. ALL OPERATIONS ARE SINGLE-TARGET: Every actionable operation MUST be executed per CI. NEVER group multiple ci_ids in a single step.\n9. LOOP EXPANSION: If INFO step returns multiple CIs, generate separate step per CI using indexed references: {{output_ref[0].ci_id}}, {{output_ref[1].ci_id}}, ...\n10. DEPENDENCY RULE: All operational steps depend ONLY on INFO step. Do NOT chain operational steps.\n11. FORCE HANDLING: If user mentions force/immediate/urgent/frozen → set operation_params.force = true, else false.\n12. EXCLUSION HANDLING: If user specifies exclusions, apply dynamic_filter.exclude or neq/contains filters.\n13. TARGET RESOLUTION: \"servers\" → Compute, \"database servers\" → Database, \"app servers\" → based on product/description/role.\n14. PARALLEL EXECUTION: Multiple UPDATE steps must depend only on INFO step and run independently.\n15. TOOL-READY DATA: INFO step must include: ci_id, name, ip_address, region (if available).\n\nReturn ONLY the execution plan JSON.",
             "type": "text"
           }
         ],
@@ -311,13 +910,13 @@
         "name": "LLM invoker",
         "displayName": "Inject Tools into Execution Plan",
         "type": "agent",
-        "description": "LLM Call 3 (per sub-task): Maps each step to the best MCP tool and pre-fills arguments from CMDB asset data. Outputs separate server_id and tool_name for MCP execution.",
+        "description": "LLM Call 3 (per sub-task): Maps each step to the best MCP tool and pre-fills arguments from CMDB asset data.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
           {
             "key": "Model",
-            "value": "gemini-2.5-flash",
+            "value": "llama 3",
             "type": "text"
           },
           {
@@ -337,7 +936,7 @@
           },
           {
             "key": "Prompt",
-            "value": "You are a Tool Injection Engine. For each step in the execution plan, find the best matching MCP tool and pre-fill its arguments from CMDB asset data.\n\n### Execution Plan:\n{{current_exec_plan}}\n\n### Available MCP Tools:\n{{available_tools}}\n\n### Customer's CMDB Assets (for argument resolution):\n{{customer_assets}}\n\n### Instructions:\nFor EACH step in the execution plan:\n1. Match the step's action + ci_type + operation to the best available MCP tool.\n2. Pre-fill the tool's arguments using values from customer_assets (IP addresses, hostnames, names, etc.).\n3. Add a \"tool_binding\" object to the step with SEPARATE server_id and tool_name fields.\n\n### tool_binding format:\nFor MCP tools:\n{\n  \"type\": \"mcp_tool\",\n  \"server_id\": \"infrastructure\",\n  \"tool_name\": \"reboot_server\",\n  \"arguments\": {\"ip_address\": \"10.0.1.5\", \"hostname\": \"app-mod-srv-01\"},\n  \"confidence\": 0.95,\n  \"reasoning\": \"Matched reboot operation on Compute to reboot_server tool\"\n}\n\nFor internal CMDB operations (INFO/AUDIT with no external tool):\n{\n  \"type\": \"internal\",\n  \"server_id\": null,\n  \"tool_name\": null,\n  \"arguments\": {},\n  \"confidence\": 1.0,\n  \"reasoning\": \"INFO step handled by CMDB engine directly\"\n}\n\nFor unmapped steps:\n{\n  \"type\": \"unmapped\",\n  \"server_id\": null,\n  \"tool_name\": null,\n  \"arguments\": {},\n  \"confidence\": 0,\n  \"reasoning\": \"No available tool for this operation\"\n}\n\n### Rules:\n1. Return the COMPLETE execution plan with tool_binding on every step.\n2. Extract server_id and tool_name from available_tools. Use exact names from the tools list.\n3. Pre-fill ALL required tool parameters from asset data. Leave optional params at defaults.\n4. server_id and tool_name MUST be separate string fields \u2014 never use composite keys.\n5. Include the full plan structure (plan_id, created_by, on_failure, steps).\n\nReturn ONLY the enriched execution plan JSON.",
+            "value": "You are a Tool Injection Engine. For each step in the execution plan, find the best matching MCP tool and pre-fill its arguments from CMDB asset data.\n\n### Execution Plan:\n{{current_exec_plan}}\n\n### Available MCP Tools:\n{{available_tools}}\n\n### Customer's CMDB Assets (for argument resolution):\n{{customer_assets}}\n\n### Instructions:\nFor EACH step in the execution plan:\n1. Match the step's action + ci_type + operation to the best available MCP tool.\n2. Pre-fill the tool's arguments using values from customer_assets (IP addresses, hostnames, names, etc.).\n3. Add a \"tool_binding\" object to the step with SEPARATE server_id and tool_name fields.\n\n### tool_binding format:\nFor MCP tools:\n{\n  \"type\": \"mcp_tool\",\n  \"server_id\": \"infrastructure\",\n  \"tool_name\": \"reboot_server\",\n  \"arguments\": {\"ip_address\": \"10.0.1.5\", \"hostname\": \"app-mod-srv-01\"},\n  \"confidence\": 0.95,\n  \"reasoning\": \"Matched reboot operation on Compute to reboot_server tool\"\n}\n\nFor internal CMDB operations (INFO/AUDIT with no external tool):\n{\n  \"type\": \"internal\",\n  \"server_id\": null,\n  \"tool_name\": null,\n  \"arguments\": {},\n  \"confidence\": 1.0,\n  \"reasoning\": \"INFO step handled by CMDB engine directly\"\n}\n\nFor unmapped steps:\n{\n  \"type\": \"unmapped\",\n  \"server_id\": null,\n  \"tool_name\": null,\n  \"arguments\": {},\n  \"confidence\": 0,\n  \"reasoning\": \"No available tool for this operation\"\n}\n\n### Rules:\n1. Return the COMPLETE execution plan with tool_binding on every step.\n2. Extract server_id and tool_name from available_tools. Use exact names from the tools list.\n3. Pre-fill ALL required tool parameters from asset data. Leave optional params at defaults.\n4. server_id and tool_name MUST be separate string fields — never use composite keys.\n5. Include the full plan structure (plan_id, created_by, on_failure, steps).\n\nReturn ONLY the enriched execution plan JSON.",
             "type": "text"
           }
         ],
@@ -354,13 +953,13 @@
         "name": "LLM invoker",
         "displayName": "Format Plan as Readable Summary",
         "type": "agent",
-        "description": "Converts the JSON execution plan into a human-readable, well-formatted summary with emojis and clear structure. No raw JSON shown to user.",
+        "description": "Converts the JSON execution plan into a human-readable, well-formatted HTML summary. Focus on Action and Target.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
           {
             "key": "Model",
-            "value": "gemini-2.5-flash",
+            "value": "llama 3",
             "type": "text"
           },
           {
@@ -375,7 +974,7 @@
           },
           {
             "key": "Prompt",
-            "value": "Convert this execution plan into a clear, human-readable summary. Do NOT show raw JSON.\n\n### Execution Plan (JSON):\n{{enriched_plan}}\n\n### Sub-Task Context:\n{{current_task.description}}\n\n### Format Rules:\nUse this EXACT structure:\n\n\ud83d\udccb **Execution Plan: <brief title from task>**\n\ud83d\udcdd Plan ID: <plan_id>\n\u2699\ufe0f Failure Policy: <on_failure>\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\nThen for EACH step:\n\n**Step N: <human readable title>**\n\u2022 Action: <action emoji> <action> <operation if UPDATE>\n\u2022 Target: <ci_type> \u2014 <specific asset names>\n\u2022 Tool: <tool icon> <server_id>::<tool_name> OR \ud83d\udce6 Internal (CMDB) OR \u26a0\ufe0f Unmapped\n\u2022 Arguments: (only for mcp_tool steps)\n    \u2023 <key>: <value> (from <source>)\n    \u2023 <key>: <value>\n\u2022 Depends on: <step IDs or \"none\">\n\u2022 Approval: <\u2705 Not required / \u26a0\ufe0f Required>\n\nAction emojis: \ud83d\udd0d INFO, \ud83d\udd04 UPDATE, \u2795 CREATE, \u274c DELETE, \ud83d\udcca AUDIT\nTool icon: \ud83d\udd27 for mcp_tool\n\nEnd with:\n\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\ud83d\udcca Total: <N> steps | <M> MCP tools | <K> internal | <J> unmapped\n\nKeep it clean, structured, and scannable. No JSON anywhere in the output.",
+            "value": "Convert this execution plan into a clean HTML summary for a chatbot screen. Do NOT show raw JSON.\n\n### Execution Plan (JSON):\n{{enriched_plan}}\n\n### Sub-Task Context:\n{{current_task.description}}\n\n### Strict Rules:\n1. Output valid HTML only. No markdown, no code blocks, no raw JSON.\n2. Use a SINGLE-COLUMN TABLE so it fits inside a narrow chatbot window.\n3. Each step must be ONE ROW with ONE CELL containing Step number, Action, and Target.\n4. Show ONLY these three fields per step:\n   - Step N\n   - Action (with icon and operation name if UPDATE)\n   - Target (resolved asset names only, not raw JSON objects)\n5. DO NOT show: Plan ID, Failure Policy, Tool name, Server ID, Arguments, Depends on, Approval, Confidence, Reasoning, Payload, CI IDs, Filters.\n6. Convert complex target objects into simple readable names (e.g. \"app-server-01, web-frontend-02\").\n7. Use these action icons exactly: 🔍 INFO, 🔄 UPDATE, ➕ CREATE, ❌ DELETE, 📊 AUDIT\n8. Keep HTML compact. Use \u003Cbr\u003E for line breaks inside cells.\n9. All cells must use word-break:break-word so text wraps properly on small screens.\n10. End with a single line showing total step count only.\n11. If enriched_plan has no steps or is empty, return: \"\u003Cp\u003ENo executable steps found.\u003C/p\u003E\"\n\n### Output Template (follow exactly):\n\u003Cdiv style=\"max-width:100%;box-sizing:border-box;font-family:Arial,sans-serif;padding:10px;\"\u003E\u003Cdiv style=\"font-size:16px;font-weight:bold;margin-bottom:8px;\"\u003E📋 Execution Plan\u003C/div\u003E\u003Cdiv style=\"font-size:13px;color:#555;margin-bottom:10px;word-break:break-word;\"\u003E{task_context_summary}\u003C/div\u003E\u003Ctable style=\"width:100%;max-width:100%;table-layout:fixed;border-collapse:separate;border-spacing:0 6px;box-sizing:border-box;\"\u003E\u003Ctr\u003E\u003Ctd style=\"border:1px solid #e0e0e0;border-radius:8px;padding:10px;background:#f9f9f9;word-break:break-word;\"\u003E\u003Cstrong\u003EStep 1\u003C/strong\u003E\u003Cbr\u003E🔄 \u003Cstrong\u003EAction:\u003C/strong\u003E Reboot\u003Cbr\u003E\u003Cstrong\u003ETarget:\u003C/strong\u003E app-modernize-server\u003C/td\u003E\u003C/tr\u003E\u003C/table\u003E\u003Cdiv style=\"font-size:12px;color:#888;margin-top:8px;\"\u003ETotal: N steps\u003C/div\u003E\u003C/div\u003E\n\nReturn ONLY the HTML. Nothing else.",
             "type": "text"
           }
         ],
@@ -392,18 +991,22 @@
         "name": "Question Node",
         "displayName": "Present Plan for Confirmation",
         "type": "inputs",
-        "description": "Shows the human-readable execution plan to the user for confirmation, override, or skip",
+        "description": "Shows the human-readable execution plan to the user for confirmation.",
         "interrupt": true,
         "next": [],
         "inputParameters": [
           {
             "key": "question_text",
-            "value": "{{formatted_plan}}\n\n---\n\u2705 Type **'confirm'** to execute this plan.\n\u270f\ufe0f Provide **changes** to override values (e.g. \"change IP to 10.0.1.6\", \"set force to true\").\n\u23ed\ufe0f Type **'skip'** to skip this task.",
+            "value": "{{formatted_plan}}\n\n\u003Cdiv style='margin-top:15px;'\u003E\u003Cp\u003EProceed with these actions?\u003C/p\u003E\u003Cp\u003E✅ \u003Cb\u003E'confirm'\u003C/b\u003E to execute.\u003Cbr\u003E✏️ \u003Cb\u003E'override'\u003C/b\u003E to change details.\u003Cbr\u003E⏭️ \u003Cb\u003E'skip'\u003C/b\u003E to skip this task.\u003C/p\u003E\u003C/div\u003E",
             "type": "string"
           },
           {
             "key": "options",
-            "value": {},
+            "value": {
+              "Option1": "confirm",
+              "Option2": "override",
+              "Option3": "skip"
+            },
             "type": "object"
           }
         ],
@@ -420,13 +1023,13 @@
         "name": "LLM invoker",
         "displayName": "Classify User Response",
         "type": "agent",
-        "description": "Classifies user response as confirmed/override/skip. If override, extracts the specific values to change.",
+        "description": "Classifies user response as confirmed/override/skip.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
           {
             "key": "Model",
-            "value": "gemini-2.5-flash",
+            "value": "llama 3",
             "type": "text"
           },
           {
@@ -446,7 +1049,7 @@
           },
           {
             "key": "Prompt",
-            "value": "Classify the user's response to an execution plan confirmation prompt.\n\n### User Response:\n{{user_confirmation}}\n\n### Current Enriched Plan:\n{{enriched_plan}}\n\n### Instructions:\n1. If user says yes/fine/confirm/ok/proceed/looks good/approve \u2192 status: \"confirmed\"\n2. If user says skip/cancel/no/don't do this \u2192 status: \"skip\"\n3. If user provides specific changes (e.g. \"change IP to 10.0.1.6\", \"set memory to 32GB\") \u2192 status: \"override\"\n\nFor overrides, extract the changes as key-value pairs mapping to tool_binding.arguments or payload fields.\n\n### Output Format:\n{\n  \"status\": \"confirmed\",\n  \"overrides\": {}\n}\n\nOR for override:\n{\n  \"status\": \"override\",\n  \"overrides\": {\n    \"step_id\": \"step-2\",\n    \"field_path\": \"tool_binding.arguments.ip_address\",\n    \"new_value\": \"10.0.1.6\",\n    \"changes_summary\": \"Changed target IP from 10.0.1.5 to 10.0.1.6\"\n  }\n}\n\nReturn ONLY the JSON object.",
+            "value": "Classify the user's response.\n\n### User Response:\n{{user_confirmation}}\n\n### Output Format:\n{\n  \"status\": \"confirmed\" | \"override\" | \"skip\",\n  \"overrides\": {}\n}\n\nReturn ONLY JSON.",
             "type": "text"
           }
         ],
@@ -463,7 +1066,7 @@
         "name": "Decision Node",
         "displayName": "User Confirmed?",
         "type": "conditions",
-        "description": "Routes based on user's confirmation: confirmed \u2192 execute, override \u2192 apply changes then execute, skip \u2192 next task",
+        "description": "Routes based on user's confirmation choice.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
@@ -483,7 +1086,7 @@
               {
                 "operator": "equal_to",
                 "comparisonValue": "override",
-                "nextNode": "Apply_Override_15"
+                "nextNode": "Ask_Override_Changes_14a"
               },
               {
                 "operator": "equal_to",
@@ -503,17 +1106,45 @@
         ]
       },
       {
+        "node_id": "Ask_Override_Changes_14a",
+        "name": "Question Node",
+        "displayName": "Ask Override Details",
+        "type": "inputs",
+        "description": "Asks the user for the specific changes they want to apply to the current plan.",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "\u003Cdiv style='padding:10px;'\u003E\u003Cb\u003E✏️ Override Requested\u003C/b\u003E\u003Cbr\u003E\u003Cp\u003EPlease enter the specific changes you'd like to make to this task.\u003C/p\u003E\u003C/div\u003E",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_override_input",
+            "type": "string"
+          }
+        ]
+      },
+      {
         "node_id": "Apply_Override_15",
         "name": "LLM invoker",
         "displayName": "Apply User Overrides",
         "type": "agent",
-        "description": "Applies user's override values to the enriched plan, then proceeds to execution.",
+        "description": "Applies user's override instructions to the current sub-task.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
           {
             "key": "Model",
-            "value": "gemini-2.5-flash",
+            "value": "llama 3",
             "type": "text"
           },
           {
@@ -528,19 +1159,19 @@
           },
           {
             "key": "user_message_key",
-            "value": "confirmation_result",
+            "value": "user_override_input",
             "type": "text"
           },
           {
             "key": "Prompt",
-            "value": "Apply the user's override to the enriched execution plan.\n\n### Current Enriched Plan:\n{{enriched_plan}}\n\n### User's Override:\n{{confirmation_result}}\n\n### Instructions:\n1. Find the step and field specified in the override.\n2. Update the value in the plan (tool_binding.arguments, payload, or target).\n3. Return the COMPLETE updated execution plan with the override applied.\n4. Do not change anything else \u2014 only apply the specified override.\n\nReturn ONLY the updated execution plan JSON.",
+            "value": "Update the sub-task details based on the user's override instructions.\n\n### Current Sub-Task:\n{{current_task}}\n\n### User's Override Instructions:\n{{user_override_input}}\n\n### Customer Assets:\n{{customer_assets}}\n\n### Instructions:\n1. Apply the user's requested changes to the sub-task (e.g., updating target entities, priority, or action intent).\n2. Keep the JSON structure identical to the original sub-task.\n3. CRITICAL ASSET VALIDATION: If the user requests to change the target asset, you MUST verify that the new asset exists in {{customer_assets}}. If the new asset is NOT found in {{customer_assets}}, you must append \"[WARNING: Asset not found]\" to the description.\n4. Return the COMPLETE updated sub-task JSON.\n\nReturn ONLY JSON.",
             "type": "text"
           }
         ],
         "outputParameters": [
           {
             "key": "output",
-            "value": "enriched_plan",
+            "value": "current_task",
             "type": "string"
           }
         ]
@@ -550,14 +1181,16 @@
         "name": "Iterator Node",
         "displayName": "Execute Plan Steps",
         "type": "iterator",
-        "description": "Inner iterator: loops through each step in the confirmed/overridden execution plan for tool execution",
+        "description": "Inner iterator: loops through each step in the confirmed/overridden execution plan.",
         "interrupt": false,
         "next": [
           "Decision_Step_Type_17",
-          "Iterator_Tasks_8"
+          "Decision_Is_Last_Task_16a",
+          "Decision_Step_Type_17",
+          "Decision_Is_Last_Task_16a"
         ],
         "loopPath": "Decision_Step_Type_17",
-        "completePath": "Iterator_Tasks_8",
+        "completePath": "Decision_Is_Last_Task_16a",
         "inputParameters": [
           {
             "key": "array",
@@ -577,7 +1210,7 @@
         "name": "Decision Node",
         "displayName": "Check Tool Binding Type",
         "type": "conditions",
-        "description": "Routes each step based on its tool_binding.type: mcp_tool \u2192 execute, internal/unmapped \u2192 skip",
+        "description": "Routes each step based on its tool_binding.type. MCP tools are executed; internal and unmapped steps are skipped.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
@@ -621,7 +1254,7 @@
         "name": "MCP Tool",
         "displayName": "Execute MCP Tool",
         "type": "mcp-tool",
-        "description": "Executes the MCP tool with pre-confirmed arguments from the enriched execution plan. server_id, tool_name, and arguments come directly from tool_binding.",
+        "description": "Executes the MCP tool with pre-confirmed arguments.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
@@ -654,13 +1287,13 @@
         "name": "LLM invoker",
         "displayName": "Format Execution Result",
         "type": "agent",
-        "description": "Formats the raw MCP tool execution result into a user-friendly message with step context and asset details.",
+        "description": "Formats the raw MCP tool execution result into a user-friendly HTML message (Action + Target + Status + Summary).",
         "interrupt": false,
         "next": [],
         "inputParameters": [
           {
             "key": "Model",
-            "value": "gemini-2.5-flash",
+            "value": "llama 3",
             "type": "text"
           },
           {
@@ -675,7 +1308,7 @@
           },
           {
             "key": "Prompt",
-            "value": "Format this MCP tool execution result into a clear, user-friendly message.\n\n### Step Details:\n- Step: {{current_step.step_id}}\n- Action: {{current_step.action}}\n- Reason: {{current_step.reason}}\n- Tool: {{current_step.tool_binding.server_id}}::{{current_step.tool_binding.tool_name}}\n- Arguments Used: {{current_step.tool_binding.arguments}}\n\n### Raw Execution Result:\n{{step_result}}\n\n### Format:\nProduce a concise summary:\n\n<status emoji> **Step <N>: <title>**\n\ud83d\udd27 Tool: <server>::<tool>\n\ud83d\udcca Result: <human-readable outcome>\n\ud83d\udccd Assets: <specific names/IPs affected>\n\u23f1\ufe0f Status: <success/failed/partial>\n\nIf the result contains an error, clearly flag it with \u274c.\nKeep it concise \u2014 3-5 lines max. No JSON.",
+            "value": "Format this MCP tool execution result into a concise structured HTML message.\n\nStep Details:\nStep: {{current_step.step_id}}\nAction: {{current_step.action}}\nTarget: {{current_step.target}}\n\nRaw Execution Result: {{step_result}}\n\nFormat Rules:\n- Output strictly compact HTML.\n- Allowed tags: \u003Cdiv\u003E, \u003Cspan\u003E, \u003Cb\u003E, \u003Ci\u003E, \u003Cbr\u003E, \u003Cp\u003E, \u003Cul\u003E, \u003Cli\u003E.\n- Show: Action, Target, Status, and a short Result Summary.\n- Status must be exactly: \u003Cspan style='color:green;'\u003E✅ Success\u003C/span\u003E OR \u003Cspan style='color:red;'\u003E❌ Failed\u003C/span\u003E (based on result content)\n- Extract a clean readable name from current_step.target.\n- If the result contains error, exception, or failure keywords → Status = Failed. Otherwise → Status = Success.\n- Summarize the Raw Execution Result into a short, user-friendly format (e.g. 'Successfully restarted the service', 'Failed due to authentication error').\n- Do NOT include raw logs, JSON, arguments, or technical details.\n\nTemplate:\n\u003Cdiv style=\"padding:10px;background:#f9f9f9;border-left:4px solid #2ecc71;\"\u003E\u003Cb\u003E{{current_step.action}}\u003C/b\u003E\u003Cbr\u003E\u003Cspan style=\"color:#555;\"\u003ETarget: \u003Ci\u003E{clean_target_name}\u003C/i\u003E\u003C/span\u003E\u003Cbr\u003E\u003Cspan\u003EStatus: {status}\u003C/span\u003E\u003Cdiv style=\"margin-top:6px;padding-top:6px;border-top:1px solid #ddd;font-size:13px;color:#333;\"\u003E\u003Cb\u003EResult:\u003C/b\u003E\u003Cbr\u003E{result_summary_html}\u003C/div\u003E\u003C/div\u003E\n\nReturn ONLY the HTML.",
             "type": "text"
           }
         ],
@@ -692,18 +1325,20 @@
         "name": "Question Node",
         "displayName": "Show Step Result",
         "type": "inputs",
-        "description": "Displays the formatted execution result for the current step and continues to the next step",
+        "description": "Displays the formatted execution result for the current step and asks user to acknowledge before continuing.",
         "interrupt": true,
         "next": [],
         "inputParameters": [
           {
             "key": "question_text",
-            "value": "{{formatted_step_result}}\n\n\u2192 Type **'ok'** to continue to the next step.",
+            "value": "{{formatted_step_result}}\u003Cbr\u003E\u003Cbr\u003E\u003Cspan style='color:#555;font-size:0.9em;'\u003EType \u003Cb\u003EOk\u003C/b\u003E to continue to the next step.\u003C/span\u003E",
             "type": "string"
           },
           {
             "key": "options",
-            "value": {},
+            "value": {
+              "Option1": "Ok"
+            },
             "type": "object"
           }
         ],
@@ -716,17 +1351,90 @@
         ]
       },
       {
+        "node_id": "Decision_Is_Last_Task_16a",
+        "name": "Decision Node",
+        "displayName": "Check If Last Sub-Task",
+        "type": "conditions",
+        "description": "Skips the Task Complete notification if this is the final sub-task.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{current_task.is_last_task}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "true",
+                "nextNode": "End_Output_21"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "True",
+                "nextNode": "End_Output_21"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": true,
+                "nextNode": "End_Output_21"
+              },
+              {
+                "operator": "not_equals",
+                "comparisonValue": "true",
+                "nextNode": "Show_Task_Complete_16b"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Show_Task_Complete_16b",
+        "name": "Question Node",
+        "displayName": "Show Task Execution Complete",
+        "type": "inputs",
+        "description": "NEW: Notifies the user that all steps for the current sub-task have completed successfully, before proceeding to the next sub-task.",
+        "interrupt": true,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "\u003Cdiv style='padding:12px; background:#f0fdf4; border-left:4px solid #22c55e; font-family:sans-serif;'\u003E\u003Cstrong\u003E✅ Execution Complete\u003C/strong\u003E\u003Cbr\u003E\u003Cbr\u003EAll steps for this sub-task have been executed successfully.\u003Cbr\u003E\u003Cbr\u003E\u003Cstrong\u003ESub-Task:\u003C/strong\u003E {{current_task.description}}\u003Cbr\u003E\u003Cbr\u003EClick \u003Cb\u003EOk\u003C/b\u003E to continue to the next task.\u003C/div\u003E",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {
+              "Option1": "Ok"
+            },
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "task_complete_ack",
+            "type": "string"
+          }
+        ]
+      },
+      {
         "node_id": "End_Output_21",
         "name": "End Node",
         "displayName": "Flow Complete",
         "type": "output",
-        "description": "Final output after all sub-tasks have been planned, confirmed, and executed",
+        "description": "Final HTML summary after all sub-tasks have been processed.",
         "interrupt": false,
         "next": [],
         "inputParameters": [
           {
             "key": "final_input",
-            "value": "\ud83c\udf89 **All Tasks Complete!**\n\n\ud83d\udcdd **Sub-Tasks Processed:** {{decomposed_tasks.total_tasks}}\n\n### Tasks Decomposed:\n{{decomposed_tasks.sub_tasks}}\n\n---\n\nAll execution plans were generated, confirmed, and tools executed with your live CMDB data. \ud83d\ude80\n\nIf you need anything else, start a new session.",
+            "value": "\u003Cdiv style=\"font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif; width: 100%; padding: 12px; border-radius: 10px; background: #ffffff; border: 1px solid #e5e7eb;\"\u003E\u003Cdiv style=\"display: flex; align-items: center; gap: 8px; margin-bottom: 6px;\"\u003E\u003Cdiv style=\"width: 28px; height: 28px; border-radius: 50%; background: #ecfdf5; display: flex; align-items: center; justify-content: center; font-size: 14px;\"\u003E✅\u003C/div\u003E\u003Cdiv style=\"font-size: 15px; font-weight: 600; color: #111827;\"\u003EAll Tasks Completed\u003C/div\u003E\u003C/div\u003E\u003Cdiv style=\"font-size: 13px; color: #374151;\"\u003ESuccessfully processed \u003Cstrong\u003E{{decomposed_tasks.total_tasks}}\u003C/strong\u003E sub-task(s) for \u003Cstrong\u003E{{user_profile.name}}\u003C/strong\u003E.\u003C/div\u003E\u003Cdiv style=\"margin-top: 8px; padding-top: 6px; border-top: 1px solid #f1f5f9; font-size: 12px; color: #9ca3af;\"\u003EStart a new session anytime to run another request.\u003C/div\u003E\u003C/div\u003E",
             "type": "string"
           }
         ],
@@ -742,11 +1450,39 @@
     "edges": [
       {
         "from": "Start_1",
-        "to": "Ask_Customer_ID_2"
+        "to": "Question Node_node-1777351912259-ka58u5nlm"
       },
       {
-        "from": "Ask_Customer_ID_2",
-        "to": "Fetch_Ontology_3"
+        "from": "Question Node_node-1777351912259-ka58u5nlm",
+        "to": "API caller_node-1777352037603-pfck9nfke"
+      },
+      {
+        "from": "API caller_node-1777352037603-pfck9nfke",
+        "to": "Decision Node_node-1777352026299-vsvz3w4dz"
+      },
+      {
+        "from": "Decision Node_node-1777352026299-vsvz3w4dz",
+        "to": "Question Node_node-1777352083305-ppsre7sz4",
+        "condition": "0"
+      },
+      {
+        "from": "Decision Node_node-1777352026299-vsvz3w4dz",
+        "to": "Question Node_node-1777351912259-ka58u5nlm",
+        "condition": "1"
+      },
+      {
+        "from": "Question Node_node-1777352083305-ppsre7sz4",
+        "to": "Decision Node_node-1777352705132-9fpsnlkxe"
+      },
+      {
+        "from": "Decision Node_node-1777352705132-9fpsnlkxe",
+        "to": "Fetch_Ontology_3",
+        "condition": "0"
+      },
+      {
+        "from": "Decision Node_node-1777352705132-9fpsnlkxe",
+        "to": "Question Node_node-1777351912259-ka58u5nlm",
+        "condition": "1"
       },
       {
         "from": "Fetch_Ontology_3",
@@ -754,7 +1490,21 @@
       },
       {
         "from": "Fetch_Customer_Assets_4",
-        "to": "Discover_Tools_5"
+        "to": "Check_Assets_Empty_5a"
+      },
+      {
+        "from": "Check_Assets_Empty_5a",
+        "to": "Notify_No_Assets_5b",
+        "condition": "0"
+      },
+      {
+        "from": "Check_Assets_Empty_5a",
+        "to": "Discover_Tools_5",
+        "condition": "1"
+      },
+      {
+        "from": "Notify_No_Assets_5b",
+        "to": "End_Fail_5c"
       },
       {
         "from": "Discover_Tools_5",
@@ -766,12 +1516,74 @@
       },
       {
         "from": "Decompose_Tasks_7",
-        "to": "Iterator_Tasks_8"
+        "to": "Format_Breakdown_HTML_7a"
+      },
+      {
+        "from": "Format_Breakdown_HTML_7a",
+        "to": "Confirm_Breakdown_7b"
+      },
+      {
+        "from": "Confirm_Breakdown_7b",
+        "to": "Classify_Breakdown_Response_7c"
+      },
+      {
+        "from": "Classify_Breakdown_Response_7c",
+        "to": "Decision_Breakdown_Valid_7d"
+      },
+      {
+        "from": "Decision_Breakdown_Valid_7d",
+        "to": "Iterator_Tasks_8",
+        "condition": "0"
+      },
+      {
+        "from": "Decision_Breakdown_Valid_7d",
+        "to": "Ask_Clarification_7e",
+        "condition": "1"
+      },
+      {
+        "from": "Decision_Breakdown_Valid_7d",
+        "to": "End_Output_21",
+        "condition": "2"
+      },
+      {
+        "from": "Ask_Clarification_7e",
+        "to": "Decompose_Tasks_7"
       },
       {
         "from": "Iterator_Tasks_8",
-        "to": "Generate_Plan_9",
+        "to": "Fetch_Action_Capabilities_8a",
         "condition": "loop"
+      },
+      {
+        "from": "Fetch_Action_Capabilities_8a",
+        "to": "Validate_Action_Params_8b"
+      },
+      {
+        "from": "Validate_Action_Params_8b",
+        "to": "Decision_Action_Valid_8c"
+      },
+      {
+        "from": "Decision_Action_Valid_8c",
+        "to": "Ask_Action_Clarification_8d",
+        "condition": "0"
+      },
+      {
+        "from": "Decision_Action_Valid_8c",
+        "to": "Ask_Action_Clarification_8d",
+        "condition": "1"
+      },
+      {
+        "from": "Decision_Action_Valid_8c",
+        "to": "Generate_Plan_9",
+        "condition": "2"
+      },
+      {
+        "from": "Ask_Action_Clarification_8d",
+        "to": "Update_Task_With_Params_8e"
+      },
+      {
+        "from": "Update_Task_With_Params_8e",
+        "to": "Validate_Action_Params_8b"
       },
       {
         "from": "Iterator_Tasks_8",
@@ -805,7 +1617,7 @@
       },
       {
         "from": "Decision_Confirm_14",
-        "to": "Apply_Override_15",
+        "to": "Ask_Override_Changes_14a",
         "condition": "1"
       },
       {
@@ -814,18 +1626,17 @@
         "condition": "2"
       },
       {
+        "from": "Ask_Override_Changes_14a",
+        "to": "Apply_Override_15"
+      },
+      {
         "from": "Apply_Override_15",
-        "to": "Step_Iterator_16"
+        "to": "Fetch_Action_Capabilities_8a"
       },
       {
         "from": "Step_Iterator_16",
         "to": "Decision_Step_Type_17",
         "condition": "loop"
-      },
-      {
-        "from": "Step_Iterator_16",
-        "to": "Iterator_Tasks_8",
-        "condition": "complete"
       },
       {
         "from": "Decision_Step_Type_17",
@@ -853,6 +1664,25 @@
       {
         "from": "Show_Result_20",
         "to": "Step_Iterator_16"
+      },
+      {
+        "from": "Show_Task_Complete_16b",
+        "to": "Iterator_Tasks_8"
+      },
+      {
+        "from": "Step_Iterator_16",
+        "to": "Decision_Is_Last_Task_16a",
+        "condition": "complete"
+      },
+      {
+        "from": "Decision_Is_Last_Task_16a",
+        "to": "End_Output_21",
+        "condition": "0"
+      },
+      {
+        "from": "Decision_Is_Last_Task_16a",
+        "to": "Show_Task_Complete_16b",
+        "condition": "1"
       }
     ]
   },
@@ -862,5 +1692,19 @@
     "stt_provider": "whisper",
     "mode": "voice_in_voice_out"
   },
-  "updatedAt": "2026-04-24T09:24:00.000Z"
+  "status": "active",
+  "version": "3.0.0",
+  "isPublic": true,
+  "createdBy": "Admin",
+  "inputs": [
+    {
+      "key": "CHAT_QUERY",
+      "value": "",
+      "type": "text"
+    }
+  ],
+  "id": "cmdb_exec_plan_v33",
+  "createdAt": "2026-04-24T07:46:43.803Z",
+  "updatedAt": "2026-05-20T05:40:58.585Z",
+  "agent_id": "cmdb_exec_plan_v33"
 }
