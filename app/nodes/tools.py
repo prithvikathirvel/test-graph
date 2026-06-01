@@ -1,5 +1,7 @@
 import httpx
 import aiosmtplib
+from sendgrid import SendGridAPIClient
+from sendgrid.helpers.mail import Mail
 from email.message import EmailMessage
 from app.engine.registry import NodeRegistry
 from app.utils.templating import resolve_placeholders
@@ -64,7 +66,7 @@ async def api_caller_node(state: FlowState, node_config: dict) -> dict:
 
 @NodeRegistry.register("Send Email")
 async def send_email_node(state: FlowState, node_config: dict) -> dict:
-    """Production Email Sender using async SMTP."""
+    """Production Email Sender using SendGrid API."""
     inputs = {p["key"]: p["value"] for p in node_config.get("inputParameters", [])}
     
     sender = resolve_placeholders(inputs.get("from"), state["variables"])
@@ -75,23 +77,28 @@ async def send_email_node(state: FlowState, node_config: dict) -> dict:
     out_params = node_config.get("outputParameters", [])
     output_key = out_params[0]["value"] if out_params else "emailStatus"
 
-    message = EmailMessage()
-    message["From"] = sender
-    message["To"] = recipient
-    message["Subject"] = subject
-    message.set_content(body)
+    if not settings.SENDGRID_API_KEY:
+        return {"variables": {output_key: "Email failed: SENDGRID_API_KEY not configured."}}
+
+    message = Mail(
+        from_email=sender,
+        to_emails=recipient,
+        subject=subject,
+        html_content=body
+    )
 
     try:
-        await aiosmtplib.send(
-            message,
-            hostname=getattr(settings, "SMTP_SERVER"),
-            port=int(getattr(settings, "SMTP_PORT")),
-            #start_tls=True,
-            username=settings.SMTP_USER,
-            password=settings.SMTP_PASSWORD,
-        )
-        return {"variables": {output_key: "Email sent successfully."}}
+        sg = SendGridAPIClient(settings.SENDGRID_API_KEY)
+        # Using asyncio.to_thread because SendGrid's default client is synchronous
+        response = await asyncio.to_thread(sg.send, message)
+        
+        if 200 <= response.status_code < 300:
+            return {"variables": {output_key: "Email sent successfully."}}
+        else:
+            return {"variables": {output_key: f"Email sending failed with status code: {response.status_code}"}}
+            
     except Exception as e:
+        logger.error(f"❌ SendGrid Error: {str(e)}")
         return {"variables": {output_key: f"Email failed: {str(e)}"}}
 
 
