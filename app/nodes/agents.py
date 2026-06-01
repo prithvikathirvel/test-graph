@@ -91,7 +91,8 @@ def _get_llm(model_name: str, temperature: float = 0.0) -> BaseChatModel:
         # If the user provided a full path (e.g. "meta-llama/Llama-3-70b-instruct"), use it.
         # Otherwise, map generic names to the best available version on the provider.
         model_id = model_name.strip()
-        if normalized_name in ["llama 3", "llama3", "llama 3.3", "llama3.3"]:
+        if normalized_name in ["llama 3", "llama3", "llama 3.1", "llama3.1", "llama 3.3", "llama3.3"]:
+            # model_id = "meta-llama/Llama-3.1-8B-Instruct"
             model_id = "meta/llama-3.3-70b-instruct"
         
         logger.info(f"Initializing ChatOpenAI for Llama model: '{model_id}' via {settings.OPENAI_BASE_URL}")
