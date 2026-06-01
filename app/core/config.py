@@ -12,14 +12,15 @@ class Settings(BaseSettings):
     SMTP_PORT : int = 587
     GCP_PROJECT_ID: str = "prj-contentportal-dev-389901"
     GCP_CREDENTIALS_PATH: str = "service-account.json"
-    OPENAI_API_KEY: str = "sk-Fm3dP1vX7qYt6uJzZbL5Kr2HgS8oWnCxEjQaRfNiGpTl"
-    OPENAI_BASE_URL: str = "https://infinitai.sifymdp.digital/maas/v1"
+    OPENAI_API_KEY: str = "sk-gw-qbsgi2Q6Tft2xzGcNqgVfFnxJZcfPLrE-hUo6i5Tz1o"
+    OPENAI_BASE_URL: str = "https://aigateway-uat.sifymdp.digital/api/v1/maas"
     GOOGLE_APPLICATION_CREDENTIALS: str = "service-account.json"
     LANGSMITH_TRACING: str = "true"
     LANGSMITH_ENDPOINT: str = "https://api.smith.langchain.com"
     LANGSMITH_API_KEY: str = "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"
     LANGSMITH_PROJECT: str = "Sify_Agent_Studio"
     TAVILY_API_KEY: str
+    SENDGRID_API_KEY: str = "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"
     
     class Config:
         env_file = ".env"
@@ -34,7 +35,7 @@ os.environ["TAVILY_API_KEY"] = settings.TAVILY_API_KEY
 os.environ["OPENAI_API_KEY"] = settings.OPENAI_API_KEY
 os.environ["OPENAI_BASE_URL"] = settings.OPENAI_BASE_URL
 
-# Default Voice Config fallback
+
 DEFAULT_VOICE_CONFIG = {
     "stt_provider": "whisper",
     "tts_provider": "piper",

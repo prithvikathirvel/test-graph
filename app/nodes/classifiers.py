@@ -7,7 +7,7 @@ from google.oauth2 import service_account
 from langchain_google_genai import ChatGoogleGenerativeAI
 
 from app.engine.registry import NodeRegistry
-from app.utils.templating import resolve_placeholders
+from app.core.config import settings
 from app.core.state import FlowState
 
 logger = logging.getLogger(__name__)
@@ -55,9 +55,9 @@ async def classifier_node(state: FlowState, node_config: dict) -> dict:
             )
     else:
         llm = ChatOpenAI(
-            model="meta/llama-3.3-70b-instruct",
-            api_key="sk-Fm3dP1vX7qYt6uJzZbL5Kr2HgS8oWnCxEjQaRfNiGpTl",
-            base_url="https://infinitai.sifymdp.digital/maas/v1"
+            model="meta-llama/Llama-3.1-8B-Instruct",
+            api_key=settings.OPENAI_API_KEY,
+            base_url=settings.OPENAI_BASE_URL
         )
 
     try:
