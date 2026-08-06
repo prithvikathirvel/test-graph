@@ -83,7 +83,7 @@ except Exception as e:
     logger.warning(f"Could not load GCP credentials: {e}")
     credentials = None
 
-def _get_llm(model_name: str, temperature: float = 0.0) -> BaseChatModel:
+def _get_llm(model_name: str, temperature: float = 0.0, max_tokens: Optional[int] = 1500) -> BaseChatModel:
     normalized_name = model_name.strip().lower()
     
     # ── 1. Llama / InfinitAI Maas Path ───────────────────────────────────────
@@ -101,6 +101,9 @@ def _get_llm(model_name: str, temperature: float = 0.0) -> BaseChatModel:
             api_key=settings.OPENAI_API_KEY,
             base_url=settings.OPENAI_BASE_URL,
             temperature=temperature,
+            # max_tokens=max_tokens,
+            #max_retries=1,
+            #request_timeout=55,
             callbacks=[token_callback_handler],
         )
     
@@ -108,12 +111,15 @@ def _get_llm(model_name: str, temperature: float = 0.0) -> BaseChatModel:
     else:
         slug = _normalize_model_name(model_name)
         logger.info(f"Initializing ChatVertexAI with Gemini model='{slug}'")
-        return ChatVertexAI(
+        kwargs = dict(
             model=slug,
             credentials=credentials,
             temperature=temperature,
             callbacks=[token_callback_handler],
         )
+        if max_tokens:
+            kwargs["max_output_tokens"] = max_tokens
+        return ChatVertexAI(**kwargs)
 
 
 # ── 5. The Node Executor (Final Production Version) ────────────────────────
@@ -126,6 +132,7 @@ async def llm_invoker_node(state: FlowState, node_config: dict) -> dict:
     model_choice = inputs.get("Model", "gemini-2.5-flash")
     chatty_mode = str(inputs.get("chatty_mode", "false")).lower() == "true"
     user_msg_key = inputs.get("user_message_key", "CHAT_QUERY")
+    max_tokens = int(inputs.get("max_tokens", 0)) or None
     memory_window = int(inputs.get("memory_window", 20))
     use_memory = bool(inputs.get("use_memory", True))
     response_format = str(inputs.get("Response Format", "text")).lower()
@@ -159,7 +166,7 @@ async def llm_invoker_node(state: FlowState, node_config: dict) -> dict:
 
     # 4. Initialize LLM
     try:
-        llm = _get_llm(model_choice)
+        llm = _get_llm(model_choice, max_tokens=max_tokens)
     except Exception as e:
         logger.error(f"❌ Failed to initialize LLM: {e}", exc_info=True)
         return {"variables": {output_key: {"message": f"Initialization Error: {e}", "intent": "continue"}}}

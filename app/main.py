@@ -9,6 +9,7 @@ from app.core.config import settings
 from app.services.voice.service import UniversalVoiceService
 from app.services.mcp_client import mcp_client_manager
 from app.services.mcp_server import load_exposed_flows
+from app.nodes.ontology import load_gliner2_model
 from app.core.logger import setup_logging
 
 # --- API Routers ---
@@ -28,6 +29,7 @@ import app.nodes.mcp_node
 import app.nodes.agent_flow
 import app.nodes.db_chat
 import app.nodes.react_agent
+import app.nodes.ontology
 
 setup_logging()
 logger = logging.getLogger(__name__)
@@ -72,6 +74,12 @@ async def lifespan(app: FastAPI):
         logger.info("External MCP clients initialized.")
     except Exception as e:
         logger.warning(f"Problem during MCP initialization: {e}")
+
+    # Load GLiNER2 model once at startup
+    try:
+        load_gliner2_model()
+    except Exception as e:
+        logger.warning(f"GLiNER2 model not loaded (ontology nodes will be unavailable): {e}")
     
     yield
     

@@ -6,3 +6,6 @@ app.log
 .env 
 .DS_Store
 .idea/
+/data
+# neo4j.cypher 
+# neo4j.cypher.bak

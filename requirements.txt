@@ -31,3 +31,5 @@ sqlalchemy
 psycopg2-binary
 PyMySQL
 pytz
+rapidfuzz
+gliner2
