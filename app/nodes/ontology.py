@@ -127,100 +127,151 @@ async def canonical_term_resolution_node(state: FlowState, node_config: dict) ->
 
 # ─── Cypher Query Builder ───────────────────────────────────────────────────────
 
-# Default mapping: filter_key → (relationship_type, target_label, property_name)
-# Used when no schema_topology is provided or for known property-only fields
-DEFAULT_RELATIONSHIP_MAP = {
-    "brand":       ("MADE_BY",        "Brand",        "name"),
-    "category":    ("BELONGS_TO",     "Category",     "name"),
-    "color":       ("AVAILABLE_IN",   "Color",        "name"),
-    "gender":      ("TARGETS",        "Gender",       "name"),
-    "material":    ("MADE_OF",        "Material",     "name"),
-    "occasion":    ("SUITABLE_FOR",   "Occasion",     "name"),
-    "fit":         ("HAS_FIT",        "Fit",          "name"),
-    "pattern":     ("HAS_PATTERN",    "Pattern",      "name"),
-    "season":      ("BEST_FOR",       "Season",       "name"),
-    "subcategory": ("PART_OF",        "SubCategory",  "name"),
-}
 
-# Fields that map to WHERE clauses on Product properties (not relationships)
-PROPERTY_FILTERS = {"price_min", "price_max", "price_operator", "size", "age_group", "usage"}
-
-# Fields to skip (metadata, not query-relevant)
-SKIP_FIELDS = {"price_operator", "age_group", "usage"}
+def _to_singular(word: str) -> str:
+    if len(word) > 4 and word.endswith("ies"):
+        return word[:-3] + "y"
+    if len(word) > 4 and word.endswith("s") and not word.endswith("ss"):
+        return word[:-1]
+    return word
 
 
-def _derive_mapping_from_topology(topology: dict) -> dict:
-    """Auto-derive filter_key → (rel_type, target_label, property) from schema topology."""
-    mapping = {}
+def _derive_mapping_from_topology(topology: dict, root_label: str) -> dict:
+    """Build filter_key → (rel_type, target_label, lookup_prop) from schema topology.
+
+    Registers plural, singular, and rel-type-derived keys so user filter keys always resolve.
+    Only includes relationships where root_label appears in from_labels.
+    """
+    mapping: dict = {}
     for rel_type, info in topology.items():
+        from_labels = info.get("from_labels", [])
         to_labels = info.get("to_labels", [])
         if not to_labels:
             continue
+        # Skip relationships that don't originate from the root entity
+        if from_labels and root_label not in from_labels:
+            continue
         target_label = to_labels[0]
-        # Derive filter key from target label (e.g. "Brand" → "brand", "SubCategory" → "subcategory")
-        filter_key = target_label.lower().replace(" ", "_")
-        mapping[filter_key] = (rel_type, target_label, "name")
+        lookup_prop = info.get("lookup_property", "name")
+        entry = (rel_type, target_label, lookup_prop)
+
+        label_key = target_label.lower().replace(" ", "_")
+        rel_last = rel_type.split("_")[-1].lower()
+
+        for key in {label_key, _to_singular(label_key), rel_last, _to_singular(rel_last)}:
+            if key and len(key) > 1:
+                mapping.setdefault(key, entry)
     return mapping
 
 
-def _build_where_clauses(filters: dict, params: dict) -> list:
-    """Build WHERE clause fragments from price/size/property filters."""
+def _build_where_clauses(filters: dict, mapping: dict, params: dict,
+                          root_alias: str, skip_fields: set) -> list:
+    """Build WHERE fragments: range filters for {base}_min/_max/_operator, equality for the rest."""
     clauses = []
-    price_op = filters.get("price_operator", "lte")
-    price_min = filters.get("price_min")
-    price_max = filters.get("price_max")
+    processed: set = set()
 
-    if price_min and str(price_min) != "0":
-        params["price_min"] = int(price_min)
-        if price_op == "gte" or price_op == "between" or price_min:
-            clauses.append("p.price >= $price_min")
+    # Collect range filter groups keyed by base field name
+    range_bases: dict = {}
+    for key in filters:
+        if key in skip_fields or key in mapping:
+            continue
+        if key.endswith("_min"):
+            range_bases.setdefault(key[:-4], {})["min"] = filters[key]
+            processed.add(key)
+        elif key.endswith("_max"):
+            range_bases.setdefault(key[:-4], {})["max"] = filters[key]
+            processed.add(key)
+        elif key.endswith("_operator"):
+            range_bases.setdefault(key[:-9], {})["op"] = filters[key]
+            processed.add(key)
 
-    if price_max and str(price_max) != "0":
-        params["price_max"] = int(price_max)
-        if price_op in ("lt", "lte", "between") or price_max:
-            op = "<" if price_op == "lt" else "<="
-            clauses.append(f"p.price {op} $price_max")
+    def _cast(v):
+        try:
+            f = float(str(v))
+            return int(f) if f == int(f) else f
+        except (ValueError, TypeError):
+            return v
 
-    if price_op == "eq" and price_max and str(price_max) != "0":
-        params["price_exact"] = int(price_max)
-        clauses.clear()
-        clauses.append("p.price = $price_exact")
+    # Scalar operator map for non-range fields: {field}_operator without _min/_max
+    _SCALAR_OPS = {
+        "eq":          lambda a, p, k: (f"{a}.{k} = ${k}",          {k: p}),
+        "neq":         lambda a, p, k: (f"{a}.{k} <> ${k}",         {k: p}),
+        "contains":    lambda a, p, k: (f"{a}.{k} CONTAINS ${k}",   {k: p}),
+        "starts_with": lambda a, p, k: (f"{a}.{k} STARTS WITH ${k}", {k: p}),
+        "ends_with":   lambda a, p, k: (f"{a}.{k} ENDS WITH ${k}",  {k: p}),
+        "in":          lambda a, p, k: (f"{a}.{k} IN ${k}",         {k: p if isinstance(p, list) else [p]}),
+        "not_in":      lambda a, p, k: (f"NOT {a}.{k} IN ${k}",     {k: p if isinstance(p, list) else [p]}),
+        "is_null":     lambda a, p, k: (f"{a}.{k} IS NULL",         {}),
+        "is_not_null": lambda a, p, k: (f"{a}.{k} IS NOT NULL",     {}),
+    }
 
-    if price_op == "gt" and price_min and str(price_min) != "0":
-        clauses.clear()
-        params["price_min"] = int(price_min)
-        clauses.append("p.price > $price_min")
+    for base, vals in range_bases.items():
+        op = vals.get("op", "lte")
+        val_min = vals.get("min")
+        val_max = vals.get("max")
 
-    size = filters.get("size")
-    if size:
-        params["size"] = size
-        clauses.append("p.size = $size")
+        # Scalar operator — has _operator but no _min/_max
+        if val_min is None and val_max is None:
+            scalar_val = filters.get(base)
+            processed.add(base)
+            if scalar_val is None and op not in ("is_null", "is_not_null"):
+                continue
+            if op in _SCALAR_OPS:
+                clause, extra_params = _SCALAR_OPS[op](root_alias, scalar_val, base)
+                clauses.append(clause)
+                params.update(extra_params)
+            continue
+
+        # Range operator — has _min and/or _max
+        if op == "eq" and val_max is not None and str(val_max) != "0":
+            params[f"{base}_exact"] = _cast(val_max)
+            clauses.append(f"{root_alias}.{base} = ${base}_exact")
+        elif op == "gt" and val_min is not None and str(val_min) != "0":
+            params[f"{base}_min"] = _cast(val_min)
+            clauses.append(f"{root_alias}.{base} > ${base}_min")
+        else:
+            if val_min is not None and str(val_min) != "0":
+                params[f"{base}_min"] = _cast(val_min)
+                clauses.append(f"{root_alias}.{base} >= ${base}_min")
+            if val_max is not None and str(val_max) != "0":
+                params[f"{base}_max"] = _cast(val_max)
+                op_sym = "<" if op == "lt" else "<="
+                clauses.append(f"{root_alias}.{base} {op_sym} ${base}_max")
+
+    # Equality/IN WHERE for remaining non-relationship scalar fields
+    for key, value in filters.items():
+        if key in processed or key in skip_fields or key in mapping:
+            continue
+        if key.endswith("_min") or key.endswith("_max") or key.endswith("_operator"):
+            continue
+        if value is None or value == "":
+            continue
+        params[key] = value
+        if isinstance(value, list):
+            clauses.append(f"{root_alias}.{key} IN ${key}")
+        else:
+            clauses.append(f"{root_alias}.{key} = ${key}")
 
     return clauses
 
 
-def _get_relationship_filters(filters: dict, mapping: dict) -> dict:
-    """Extract only the filters that map to graph relationships."""
-    rel_filters = {}
-    for key, value in filters.items():
-        if key in PROPERTY_FILTERS or key in SKIP_FIELDS:
-            continue
-        if key in mapping and value:
-            rel_filters[key] = value
-    return rel_filters
+def _get_relationship_filters(filters: dict, mapping: dict, skip_fields: set) -> dict:
+    """Extract filters that map to graph relationships, excluding skip_fields."""
+    return {k: v for k, v in filters.items()
+            if k in mapping and v and k not in skip_fields}
 
 
-def _build_strict_query(filters: dict, mapping: dict, limit: int, return_fields: list) -> dict:
+def _build_strict_query(filters: dict, mapping: dict, limit: int, return_fields: list,
+                         root_label: str, order_by: str, skip_fields: set) -> dict:
     """All relationship filters as required MATCH patterns (AND logic)."""
     params = {}
-    match_parts = ["(p:Product)"]
-    rel_filters = _get_relationship_filters(filters, mapping)
+    match_parts = [f"(p:{root_label})"]
+    rel_filters = _get_relationship_filters(filters, mapping, skip_fields)
 
     for i, (key, value) in enumerate(rel_filters.items()):
         rel_type, target_label, prop = mapping[key]
         alias = f"n{i}"
         param_key = f"{key}_val"
-
         if isinstance(value, list):
             params[param_key] = value
             match_parts.append(f"(p)-[:{rel_type}]->({alias}:{target_label})")
@@ -228,37 +279,35 @@ def _build_strict_query(filters: dict, mapping: dict, limit: int, return_fields:
             params[param_key] = value
             match_parts.append(f"(p)-[:{rel_type}]->({alias}:{target_label} {{{prop}: ${param_key}}})")
 
-    where_clauses = _build_where_clauses(filters, params)
+    where_clauses = _build_where_clauses(filters, mapping, params, "p", skip_fields)
 
-    # Handle multi-value IN clauses
     for i, (key, value) in enumerate(rel_filters.items()):
         if isinstance(value, list):
             rel_type, target_label, prop = mapping[key]
-            alias = f"n{i}"
-            param_key = f"{key}_val"
-            where_clauses.append(f"{alias}.{prop} IN ${param_key}")
+            where_clauses.append(f"n{i}.{prop} IN ${key}_val")
 
     cypher = "MATCH " + ",\n      ".join(match_parts)
     if where_clauses:
         cypher += "\nWHERE " + " AND ".join(where_clauses)
 
     return_clause = ", ".join(f"p.{f}" for f in return_fields)
-    cypher += f"\nRETURN {return_clause}\nORDER BY p.price LIMIT {limit}"
+    order_clause = f"\nORDER BY p.{order_by}" if order_by else ""
+    cypher += f"\nRETURN {return_clause}{order_clause} LIMIT {limit}"
 
     return {"cypher": cypher, "params": params}
 
 
 def _build_flexible_query(filters: dict, mapping: dict, priority_fields: list,
-                          limit: int, return_fields: list) -> dict:
+                           limit: int, return_fields: list, root_label: str,
+                           order_by: str, skip_fields: set) -> dict:
     """Priority fields as required MATCH, others as OPTIONAL MATCH with relevance scoring."""
     params = {}
-    rel_filters = _get_relationship_filters(filters, mapping)
+    rel_filters = _get_relationship_filters(filters, mapping, skip_fields)
 
     required = {k: v for k, v in rel_filters.items() if k in priority_fields}
     optional = {k: v for k, v in rel_filters.items() if k not in priority_fields}
 
-    # If no required filters, use Product as base
-    match_parts = ["(p:Product)"]
+    match_parts = [f"(p:{root_label})"]
     for i, (key, value) in enumerate(required.items()):
         rel_type, target_label, prop = mapping[key]
         alias = f"r{i}"
@@ -285,42 +334,41 @@ def _build_flexible_query(filters: dict, mapping: dict, priority_fields: list,
             optional_parts.append(f"OPTIONAL MATCH (p)-[:{rel_type}]->({alias}:{target_label} {{{prop}: ${param_key}}})\n")
             score_parts.append(f"CASE WHEN {alias} IS NOT NULL THEN 1 ELSE 0 END")
 
-    where_clauses = _build_where_clauses(filters, params)
+    where_clauses = _build_where_clauses(filters, mapping, params, "p", skip_fields)
 
-    # Handle multi-value IN for required filters
     for i, (key, value) in enumerate(required.items()):
         if isinstance(value, list):
             rel_type, target_label, prop = mapping[key]
-            alias = f"r{i}"
-            param_key = f"{key}_val"
-            where_clauses.append(f"{alias}.{prop} IN ${param_key}")
+            where_clauses.append(f"r{i}.{prop} IN ${key}_val")
 
     cypher = "MATCH " + ",\n      ".join(match_parts) + "\n"
     cypher += "".join(optional_parts)
-
     if where_clauses:
         cypher += "WHERE " + " AND ".join(where_clauses) + "\n"
 
     return_clause = ", ".join(f"p.{f}" for f in return_fields)
+    order_suffix = f", p.{order_by}" if order_by else ""
     if score_parts:
         score_expr = " + ".join(score_parts)
         cypher += f"WITH p, ({score_expr}) AS relevance\n"
-        cypher += f"RETURN {return_clause}, relevance\nORDER BY relevance DESC, p.price LIMIT {limit}"
+        cypher += f"RETURN {return_clause}, relevance\nORDER BY relevance DESC{order_suffix} LIMIT {limit}"
     else:
-        cypher += f"RETURN {return_clause}\nORDER BY p.price LIMIT {limit}"
+        plain_order = f"\nORDER BY p.{order_by}" if order_by else ""
+        cypher += f"RETURN {return_clause}{plain_order} LIMIT {limit}"
 
     return {"cypher": cypher, "params": params}
 
 
-def _build_similar_query(filters: dict, mapping: dict, limit: int, return_fields: list) -> dict:
-    """OR-based scoring — matches as many filters as possible, scores by hit count."""
+def _build_similar_query(filters: dict, mapping: dict, limit: int, return_fields: list,
+                          root_label: str, order_by: str, skip_fields: set) -> dict:
+    """OR-based scoring — matches as many relationship filters as possible."""
     params = {}
-    rel_filters = _get_relationship_filters(filters, mapping)
+    rel_filters = _get_relationship_filters(filters, mapping, skip_fields)
 
     if not rel_filters:
-        return _build_exploratory_query(filters, limit, return_fields)
+        return _build_exploratory_query(filters, mapping, limit, return_fields, root_label, order_by, skip_fields)
 
-    cypher = "MATCH (p:Product)\n"
+    cypher = f"MATCH (p:{root_label})\n"
     score_parts = []
 
     for i, (key, value) in enumerate(rel_filters.items()):
@@ -336,38 +384,39 @@ def _build_similar_query(filters: dict, mapping: dict, limit: int, return_fields
             cypher += f"OPTIONAL MATCH (p)-[:{rel_type}]->({alias}:{target_label} {{{prop}: ${param_key}}})\n"
             score_parts.append(f"CASE WHEN {alias} IS NOT NULL THEN 1 ELSE 0 END")
 
-    where_clauses = _build_where_clauses(filters, params)
+    where_clauses = _build_where_clauses(filters, mapping, params, "p", skip_fields)
     if where_clauses:
         cypher += "WHERE " + " AND ".join(where_clauses) + "\n"
 
     score_expr = " + ".join(score_parts)
     return_clause = ", ".join(f"p.{f}" for f in return_fields)
+    order_suffix = f", p.{order_by}" if order_by else ""
     cypher += f"WITH p, ({score_expr}) AS relevance\n"
     cypher += f"WHERE relevance > 0\n"
-    cypher += f"RETURN {return_clause}, relevance\nORDER BY relevance DESC, p.price LIMIT {limit}"
+    cypher += f"RETURN {return_clause}, relevance\nORDER BY relevance DESC{order_suffix} LIMIT {limit}"
 
     return {"cypher": cypher, "params": params}
 
 
-def _build_exploratory_query(filters: dict, limit: int, return_fields: list) -> dict:
-    """Minimal query — browse by basic filters or return all products."""
+def _build_exploratory_query(filters: dict, mapping: dict, limit: int, return_fields: list,
+                              root_label: str, order_by: str, skip_fields: set) -> dict:
+    """Minimal query — browse with property filters only, no graph traversals."""
     params = {}
-    where_clauses = _build_where_clauses(filters, params)
+    where_clauses = _build_where_clauses(filters, mapping, params, "p", skip_fields)
 
-    cypher = "MATCH (p:Product)\n"
+    cypher = f"MATCH (p:{root_label})\n"
     if where_clauses:
         cypher += "WHERE " + " AND ".join(where_clauses) + "\n"
 
     return_clause = ", ".join(f"p.{f}" for f in return_fields)
-    cypher += f"RETURN {return_clause}\nORDER BY p.price LIMIT {limit}"
+    order_clause = f"\nORDER BY p.{order_by}" if order_by else ""
+    cypher += f"RETURN {return_clause}{order_clause} LIMIT {limit}"
 
     return {"cypher": cypher, "params": params}
 
 
-def _auto_select_mode(filters: dict, mapping: dict) -> str:
-    """Auto-detect the best query mode based on filter count."""
-    rel_filters = _get_relationship_filters(filters, mapping)
-    count = len(rel_filters)
+def _auto_select_mode(filters: dict, mapping: dict, skip_fields: set) -> str:
+    count = len(_get_relationship_filters(filters, mapping, skip_fields))
     if count == 0:
         return "exploratory"
     if count <= 2:
@@ -383,55 +432,57 @@ async def cypher_query_builder_node(state: FlowState, node_config: dict) -> dict
     schema_topology = resolve_placeholders(inputs.get("schema_topology", {}), state["variables"])
     mode = inputs.get("mode", "auto")
     limit = int(inputs.get("limit", 20))
-    priority_fields = inputs.get("priority_fields", '["brand", "category", "color"]')
-    return_fields = inputs.get("return_fields", '["name", "brand", "price", "color", "size", "sku"]')
+    priority_fields = inputs.get("priority_fields", "[]")
+    return_fields = inputs.get("return_fields", "[]")
+    root_label = inputs.get("root_label", "")
+    order_by = inputs.get("order_by", "")
+    skip_fields_raw = inputs.get("skip_fields", "[]")
 
     out_params = node_config.get("outputParameters", [])
     output_key = out_params[0]["value"] if out_params else "graph_query"
 
-    # Parse JSON string inputs
+    if not root_label:
+        logger.warning("Cypher Query Builder: root_label is required but not provided")
+        return {"variables": {output_key: {}}}
+
     filters = _to_dict(filters) if filters else {}
     schema_topology = _to_dict(schema_topology) if schema_topology else {}
     if isinstance(priority_fields, str):
         priority_fields = json.loads(priority_fields)
     if isinstance(return_fields, str):
         return_fields = json.loads(return_fields)
+    if isinstance(skip_fields_raw, str):
+        skip_fields_raw = json.loads(skip_fields_raw)
+    skip_fields: set = set(skip_fields_raw) if isinstance(skip_fields_raw, list) else set()
 
-    # Handle list input from Canonical Resolver
     if isinstance(filters, list):
         filters = filters[0] if len(filters) == 1 else {k: v for d in filters for k, v in d.items()} if filters else {}
-
     if not isinstance(filters, dict):
         filters = {}
 
-    # Build relationship mapping: auto-derive from topology or use defaults
-    if schema_topology:
-        mapping = _derive_mapping_from_topology(schema_topology)
-        # Merge with defaults for any missing keys
-        for k, v in DEFAULT_RELATIONSHIP_MAP.items():
-            mapping.setdefault(k, v)
-    else:
-        mapping = dict(DEFAULT_RELATIONSHIP_MAP)
+    # Mapping is built exclusively from schema_topology — no static fallback
+    mapping = _derive_mapping_from_topology(schema_topology, root_label) if schema_topology else {}
 
-    # Auto-select mode if not specified
     if mode == "auto":
-        mode = _auto_select_mode(filters, mapping)
+        mode = _auto_select_mode(filters, mapping, skip_fields)
 
-    logger.info(f"🔨 Cypher Query Builder: mode={mode}, filters={len(filters)} fields, limit={limit}")
+    logger.info(f"🔨 Cypher Query Builder: root={root_label}, mode={mode}, filters={len(filters)}, limit={limit}")
 
-    # Build query based on mode
     if mode == "strict":
-        result = _build_strict_query(filters, mapping, limit, return_fields)
+        result = _build_strict_query(filters, mapping, limit, return_fields, root_label, order_by, skip_fields)
     elif mode == "flexible":
-        result = _build_flexible_query(filters, mapping, priority_fields, limit, return_fields)
+        result = _build_flexible_query(filters, mapping, priority_fields, limit, return_fields, root_label, order_by, skip_fields)
     elif mode == "similar":
-        result = _build_similar_query(filters, mapping, limit, return_fields)
+        result = _build_similar_query(filters, mapping, limit, return_fields, root_label, order_by, skip_fields)
     elif mode == "exploratory":
-        result = _build_exploratory_query(filters, limit, return_fields)
+        result = _build_exploratory_query(filters, mapping, limit, return_fields, root_label, order_by, skip_fields)
     else:
-        result = _build_flexible_query(filters, mapping, priority_fields, limit, return_fields)
+        result = _build_flexible_query(filters, mapping, priority_fields, limit, return_fields, root_label, order_by, skip_fields)
 
-    result["explanation"] = f"Generated via {mode} mode with {len(_get_relationship_filters(filters, mapping))} relationship filter(s)"
+    result["explanation"] = (
+        f"Generated via {mode} mode with "
+        f"{len(_get_relationship_filters(filters, mapping, skip_fields))} relationship filter(s)"
+    )
 
     logger.info(f"✅ Cypher Query Builder: {result['cypher'][:80]}...")
     return {"variables": {output_key: result}}
