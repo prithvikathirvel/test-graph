@@ -164,6 +164,20 @@ def _derive_mapping_from_topology(topology: dict, root_label: str) -> dict:
     return mapping
 
 
+# Fields that are exclusively relationship-semantic; if not resolved by topology they must be dropped,
+# never treated as node properties in a WHERE clause.
+_REL_SEMANTIC_FIELDS: frozenset = frozenset({
+    "brand", "category", "color", "gender", "material",
+    "occasion", "fit", "pattern", "season", "subcategory",
+    "type", "style", "collection", "tag",
+})
+
+# Fields that should use case-insensitive CONTAINS instead of exact equality.
+_TEXT_SEARCH_FIELDS: frozenset = frozenset({
+    "name", "description", "title", "label", "notes", "body", "summary",
+})
+
+
 def _build_where_clauses(filters: dict, mapping: dict, params: dict,
                           root_alias: str, skip_fields: set) -> list:
     """Build WHERE fragments: range filters for {base}_min/_max/_operator, equality for the rest."""
@@ -223,22 +237,24 @@ def _build_where_clauses(filters: dict, mapping: dict, params: dict,
             continue
 
         # Range operator — has _min and/or _max
+        # price is stored as STRING in the DB so numeric comparison needs toFloat()
+        lhs = f"toFloat({root_alias}.{base})" if base == "price" else f"{root_alias}.{base}"
         if op == "eq" and val_max is not None and str(val_max) != "0":
             params[f"{base}_exact"] = _cast(val_max)
-            clauses.append(f"{root_alias}.{base} = ${base}_exact")
+            clauses.append(f"{lhs} = ${base}_exact")
         elif op == "gt" and val_min is not None and str(val_min) != "0":
             params[f"{base}_min"] = _cast(val_min)
-            clauses.append(f"{root_alias}.{base} > ${base}_min")
+            clauses.append(f"{lhs} > ${base}_min")
         else:
             if val_min is not None and str(val_min) != "0":
                 params[f"{base}_min"] = _cast(val_min)
-                clauses.append(f"{root_alias}.{base} >= ${base}_min")
+                clauses.append(f"{lhs} >= ${base}_min")
             if val_max is not None and str(val_max) != "0":
                 params[f"{base}_max"] = _cast(val_max)
                 op_sym = "<" if op == "lt" else "<="
-                clauses.append(f"{root_alias}.{base} {op_sym} ${base}_max")
+                clauses.append(f"{lhs} {op_sym} ${base}_max")
 
-    # Equality/IN WHERE for remaining non-relationship scalar fields
+    # Property WHERE for remaining scalar fields
     for key, value in filters.items():
         if key in processed or key in skip_fields or key in mapping:
             continue
@@ -246,10 +262,18 @@ def _build_where_clauses(filters: dict, mapping: dict, params: dict,
             continue
         if value is None or value == "":
             continue
-        params[key] = value
-        if isinstance(value, list):
+        # Relationship-semantic fields not resolved by topology must be skipped entirely;
+        # they have no corresponding property on the base node.
+        if key in _REL_SEMANTIC_FIELDS:
+            continue
+        if key in _TEXT_SEARCH_FIELDS:
+            params[key] = str(value)
+            clauses.append(f"toLower({root_alias}.{key}) CONTAINS toLower(${key})")
+        elif isinstance(value, list):
+            params[key] = value
             clauses.append(f"{root_alias}.{key} IN ${key}")
         else:
+            params[key] = value
             clauses.append(f"{root_alias}.{key} = ${key}")
 
     return clauses
@@ -341,10 +365,11 @@ def _build_flexible_query(filters: dict, mapping: dict, priority_fields: list,
             rel_type, target_label, prop = mapping[key]
             where_clauses.append(f"r{i}.{prop} IN ${key}_val")
 
+    # WHERE must come before OPTIONAL MATCH so it filters the base node, not the optional pattern
     cypher = "MATCH " + ",\n      ".join(match_parts) + "\n"
-    cypher += "".join(optional_parts)
     if where_clauses:
         cypher += "WHERE " + " AND ".join(where_clauses) + "\n"
+    cypher += "".join(optional_parts)
 
     return_clause = ", ".join(f"p.{f}" for f in return_fields)
     order_suffix = f", p.{order_by}" if order_by else ""
@@ -384,9 +409,13 @@ def _build_similar_query(filters: dict, mapping: dict, limit: int, return_fields
             cypher += f"OPTIONAL MATCH (p)-[:{rel_type}]->({alias}:{target_label} {{{prop}: ${param_key}}})\n"
             score_parts.append(f"CASE WHEN {alias} IS NOT NULL THEN 1 ELSE 0 END")
 
+    # WHERE before OPTIONAL MATCHes so it filters the base node first
     where_clauses = _build_where_clauses(filters, mapping, params, "p", skip_fields)
+
+    cypher_header = f"MATCH (p:{root_label})\n"
     if where_clauses:
-        cypher += "WHERE " + " AND ".join(where_clauses) + "\n"
+        cypher_header += "WHERE " + " AND ".join(where_clauses) + "\n"
+    cypher = cypher_header + cypher[len(f"MATCH (p:{root_label})\n"):]
 
     score_expr = " + ".join(score_parts)
     return_clause = ", ".join(f"p.{f}" for f in return_fields)
