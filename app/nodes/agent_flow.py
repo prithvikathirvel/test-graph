@@ -169,7 +169,7 @@ async def agent_flow_node(state: FlowState, node_config: dict) -> dict:
     try:
         # Compile without checkpointer — ephemeral, one-shot execution
         compiler = GraphCompiler(child_schema, checkpointer=None)
-        child_graph = compiler.build()
+        child_graph = await compiler.build()
         logger.info(f"✅ [{node_name}] Sub-flow '{agent_id}' compiled successfully.")
     except Exception as e:
         error = f"Failed to compile sub-flow '{agent_id}': {e}"

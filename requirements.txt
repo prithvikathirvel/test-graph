@@ -1,35 +1,49 @@
+# Web/API
 fastapi
 uvicorn
-langgraph
-langchain
-langchain-core
+httpx
+jinja2
+pydantic>=2.10,<3
+pydantic-settings>=2,<3
+jsonschema
+
+# Agent orchestration (v1 create_agent + LangGraph runtime)
+langchain>=1,<2
+langchain-core>=1,<2
+langgraph>=1,<2
+langgraph-checkpoint-mongodb
 langchain-community
 langchain-mongodb
+
+# Persistence / databases
 motor
-pydantic
-pydantic-settings
-jinja2
-langgraph-checkpoint-mongodb
-langchain_openai 
-google-cloud-speech
-google-cloud-texttospeech 
-google-auth 
-openai 
-aiosmtplib 
-httpx
-vertexai
-langchain-google-vertexai
-openai-whisper
-piper-tts
-mcp
-httpx
-langchain_google_genai
-fpdf2 
-python-docx
-langchain-community 
 sqlalchemy
 psycopg2-binary
 PyMySQL
+
+# Model providers
+openai
+langchain-openai
+langchain-google-vertexai
+langchain-google-genai
+google-auth
+google-cloud-speech
+google-cloud-texttospeech
+google-cloud-aiplatform
+
+# Protocols and external tools
+mcp>=1,<3
+tavily-python
+sendgrid
+aiosmtplib
+
+# Voice and document output
+openai-whisper
+piper-tts
+fpdf2
+python-docx
+
+# Domain utilities
 pytz
 rapidfuzz
 gliner2

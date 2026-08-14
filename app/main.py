@@ -11,6 +11,8 @@ from app.services.mcp_client import mcp_client_manager
 from app.services.mcp_server import load_exposed_flows
 from app.nodes.ontology import load_gliner2_model
 from app.core.logger import setup_logging
+from app.core.runtime import set_runtime_services, clear_runtime_services
+from app.core.security import APIKeyAuthMiddleware
 
 # --- API Routers ---
 from app.api.mcp import router as mcp_router
@@ -64,6 +66,16 @@ async def lifespan(app: FastAPI):
     app.state.mongo_client = mongo_client
     app.state.checkpointer = checkpointer
     app.state.voice_service = voice_service
+    set_runtime_services(mongo_client=mongo_client, checkpointer=checkpointer)
+
+    # Best-effort uniqueness for side-effect idempotency. Existing deployments
+    # continue even if the database role cannot create indexes.
+    try:
+        mongo_client[getattr(settings, "MONGO_DB_NAME", "agent_studio")][
+            "agent_action_journal"
+        ].create_index("idempotency_key", unique=True)
+    except Exception as e:
+        logger.warning(f"Could not ensure agent action journal index: {e}")
     
     # Init MCP Server & Client
     try:
@@ -85,6 +97,7 @@ async def lifespan(app: FastAPI):
     
     logger.info("🛑 Shutting down Sify Aurora Engine...")
     await mcp_client_manager.close_all()
+    clear_runtime_services()
     mongo_client.close()
     logger.info("Cleanup complete. Goodbye!")
 
@@ -103,6 +116,7 @@ app = FastAPI(
     openapi_tags=tags_metadata, 
     root_path="/engine"
 )
+app.add_middleware(APIKeyAuthMiddleware)
 
 # ==========================================
 # 3. Router Inclusions

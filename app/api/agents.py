@@ -135,10 +135,14 @@ async def invoke(agent_id: str, req: InvokeReq, request: Request):
             variables["CHAT_QUERY"] = user_message
 
         initial_state = {
-            "session_id": req.session_id, 
-            "user_id": req.user_id, 
-            "thread_id": req.thread_id, 
-            "variables": variables
+            "session_id": req.session_id,
+            "user_id": req.user_id,
+            "thread_id": req.thread_id,
+            "variables": variables,
+            # An authentication middleware/reverse proxy integration may set a
+            # verified context on Request.state. Request-body identity never
+            # marks itself verified.
+            "auth_context": getattr(request.state, "auth_context", {}),
         }
         config = {"configurable": {"thread_id": req.thread_id}, "recursion_limit": 150}
 

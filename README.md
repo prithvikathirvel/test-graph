@@ -4,6 +4,10 @@
 
 Agent Studio Backend is a robust FastAPI-based engine designed to compile, execute, and manage complex, stateful agent workflows using LangGraph. It provides a highly flexible execution environment capable of handling conversational flows, complex automated logic, voice-enabled (Speech-to-Text and Text-to-Speech) interactions, and Model Context Protocol (MCP) integrations.
 
+## Architecture and ReAct Agent Blueprint
+
+For the full codebase review, prioritized improvement plan, 2026 agent-harness design, guardrails, implementation examples, and backward-compatible ReAct Agent v2 JSON specification, see [`REACT_AGENT_2026_BLUEPRINT.md`](REACT_AGENT_2026_BLUEPRINT.md).
+
 ## Key Features
 
 - **LangGraph Execution Engine:** Dynamically build and invoke persistent, stateful agent graphs. The application automatically manages checkpoints and session state via a MongoDB checkpointer.
@@ -20,6 +24,26 @@ Agent Studio Backend is a robust FastAPI-based engine designed to compile, execu
 - **State Management (Checkpointer):** MongoDB (`langgraph-checkpoint-mongodb`, `motor`)
 - **Protocol:** Official Model Context Protocol (`mcp`) SDK
 - **Process Management:** PM2 (`ecosystem.config.js`)
+
+## Autonomous ReAct Agent v2
+
+The existing `Autonomous ReAct Agent` node is backward compatible: legacy JSON still returns its configured text output. Add `schema_version: "2.0"` and a server-owned profile (`safe_chat`, `support`, `commerce`, `analyst`, or `deep_ops`) to enable the guarded harness.
+
+ReAct v2 includes:
+
+- LangChain `create_agent` with a compatibility fallback for older deployments;
+- model/tool/time/concurrency budgets and model fallback middleware;
+- typed nested tool schemas for MCP and NodeRegistry tools;
+- runtime scope filtering and fail-closed tool policy;
+- risk-based durable approve/edit/reject interrupts;
+- retries, circuit breaking, idempotency, and a MongoDB action journal;
+- input/output PII masking, untrusted tool-result envelopes, and safe logging;
+- structured `AgentResult` output while preserving `react_final_answer`;
+- token-aware summarization and optional todo planning through middleware.
+
+See [the v2 JSON specification](REACT_AGENT_2026_BLUEPRINT.md#7-backward-compatible-react-agent-v2-json) for complete examples. Side-effecting v2 tools must declare a `risk`, and privileged tools must declare `required_scopes`.
+
+API authentication is compatibility-disabled by default. Production deployments should set `AUTH_REQUIRED=true`, configure `AGENT_API_KEY` and server-owned scopes, or replace the API-key boundary with OIDC/JWT middleware that provides `request.state.auth_context`.
 
 ## Getting Started
 

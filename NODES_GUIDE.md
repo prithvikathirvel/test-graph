@@ -2,6 +2,8 @@
 
 > Complete reference: how `Autonomous ReAct Agent` correlates with the rest of the engine,
 > the full inventory of existing nodes, and every new node proposed with schema + usage examples.
+>
+> **2026 v2 update:** `app/nodes/react_agent.py` is now a thin backward-compatible adapter over `app/agents/*`. New flows use LangChain `create_agent`, profiles, the guarded Tool Gateway, typed schemas, budgets, durable approvals, retries/idempotency, and structured results. Older flow JSON continues to use the `legacy` compatibility profile. The original call-chain examples below describe the legacy behavior; use [`REACT_AGENT_2026_BLUEPRINT.md`](REACT_AGENT_2026_BLUEPRINT.md) for the implemented v2 contract.
 
 ---
 

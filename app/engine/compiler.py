@@ -39,6 +39,7 @@ from app.core.state import FlowState
 from app.engine.registry import NodeRegistry
 from app.utils.templating import resolve_placeholders
 from app.core.token_tracker import get_tracker
+from app.core.redaction import safe_log_value
 
 
 logger = logging.getLogger(__name__)
@@ -51,9 +52,12 @@ def _is_dynamic(value: str) -> bool:
     return "{{" in str(value) and "}}" in str(value)
 
 
-def _truncate(value, max_len=None):
-    # Truncation disabled per user request
-    return str(value)
+def _truncate(value, max_len=1000):
+    """Redact and cap node values before logging.
+
+    Full values remain in FlowState; only the log representation is changed.
+    """
+    return safe_log_value(value, max_chars=max_len or 1000)
 
 
 # ── Router functions ───────────────────────────────────────────────────────────

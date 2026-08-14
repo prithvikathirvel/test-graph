@@ -8,6 +8,7 @@ from fastapi import Request, HTTPException
 
 from app.core.config import settings, DEFAULT_VOICE_CONFIG
 from app.engine.compiler import GraphCompiler
+from app.engine.cache import GraphCache
 from app.services.voice.service import UniversalVoiceService, should_run_tts
 from app.utils.memory import save_conversation_turn
 
@@ -15,6 +16,7 @@ logger = logging.getLogger(__name__)
 
 # ── Module-level checkpointer registry ────────────────────────────────────────
 _checkpointer = None
+_graph_compile_locks: Dict[str, asyncio.Lock] = {}
 
 def set_checkpointer(cp):
     global _checkpointer
@@ -93,16 +95,38 @@ async def fetch_schema_by_agent_id(agent_id: str) -> dict:
 
 
 async def get_and_compile_graph(agent_id: str, request: Request):
+    """Return a cached graph or fetch and compile one exactly once per agent.
+
+    The cache is intentionally TTL-bound so schema updates become visible while
+    repeated invoke/resume requests avoid network fetches and recompilation.
     """
-    Fetch schema and compile graph — now awaits build() because agentflow
-    nodes inline child schemas fetched asynchronously at compile time.
-    """
-    logger.info(f"Compiling graph for agent: {agent_id}")
-    schema = await fetch_schema_by_agent_id(agent_id)
-    compiler = GraphCompiler(schema, checkpointer=request.app.state.checkpointer)
-    graph = await compiler.build()          # ✅ awaited — async compile
-    logger.info(f"Graph compilation complete for agent: {agent_id}")
-    return graph, schema
+    cached = GraphCache.get_entry(agent_id)
+    if cached:
+        logger.debug(f"Using cached graph for agent: {agent_id} ({cached.schema_hash[:12]})")
+        return cached.graph, cached.schema
+
+    lock = _graph_compile_locks.setdefault(agent_id, asyncio.Lock())
+    async with lock:
+        # Another request may have filled the cache while this one waited.
+        cached = GraphCache.get_entry(agent_id)
+        if cached:
+            return cached.graph, cached.schema
+
+        logger.info(f"Compiling graph for agent: {agent_id}")
+        schema = await fetch_schema_by_agent_id(agent_id)
+        compiler = GraphCompiler(schema, checkpointer=request.app.state.checkpointer)
+        graph = await compiler.build()
+        entry = GraphCache.set(
+            agent_id,
+            graph,
+            schema=schema,
+            ttl_seconds=getattr(settings, "GRAPH_CACHE_TTL_SECONDS", 300),
+        )
+        logger.info(
+            f"Graph compilation complete for agent: {agent_id} "
+            f"(schema={entry.schema_hash[:12]})"
+        )
+        return graph, schema
 
 
 async def format_exact_response(status, result_state, req, request, interrupt_data=None, final_user_message=None):

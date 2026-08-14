@@ -3,9 +3,11 @@ __pycache__/
 service-account.json
 logs/
 app.log
-.env 
+.env
+.env.*
+!.env.example
 .DS_Store
 .idea/
 /data
-# neo4j.cypher 
+# neo4j.cypher
 # neo4j.cypher.bak
