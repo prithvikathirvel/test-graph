@@ -3,7 +3,7 @@ import httpx
 import logging
 import re
 from datetime import datetime
-from typing import Any, Dict, Optional
+from typing import Any, Dict, List, Optional
 from fastapi import Request, HTTPException
 
 from app.core.config import settings, DEFAULT_VOICE_CONFIG
@@ -22,6 +22,57 @@ def set_checkpointer(cp):
 
 def get_checkpointer():
     return _checkpointer
+
+
+async def fetch_global_variable(key: str) -> Any:
+    """Fetch a global variable value from the dictionary API."""
+    base_url = settings.DICTIONARY_API_URL.rstrip("/")
+    url = f"{base_url}/{key}"
+    logger.debug(f"Fetching global variable '{key}' from {url}")
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.get(url)
+            response.raise_for_status()
+            data = response.json()
+            if data.get("status") == "success":
+                return data["data"]["value"]
+            raise ValueError(f"Dictionary API returned non-success status for key '{key}'")
+    except Exception as e:
+        logger.error(f"Failed to fetch global variable '{key}': {str(e)}")
+        return None
+
+
+async def resolve_inputs(inputs: List[dict]) -> Dict[str, Any]:
+    """Resolve flow inputs by scope: local uses value directly, global fetches from dictionary API."""
+    local_vars: Dict[str, Any] = {}
+    global_keys: List[str] = []
+
+    for inp in inputs:
+        key = inp.get("key", "")
+        if not key:
+            continue
+        scope = inp.get("scope", "local")  # backward-compat: no scope → local
+        if scope == "global":
+            global_keys.append(key)
+        else:
+            local_vars[key] = inp.get("value", "")
+
+    if not global_keys:
+        return local_vars
+
+    # Fetch all global variables concurrently
+    results = await asyncio.gather(
+        *[fetch_global_variable(k) for k in global_keys],
+        return_exceptions=True,
+    )
+    for key, result in zip(global_keys, results):
+        if isinstance(result, Exception):
+            logger.warning(f"Could not resolve global variable '{key}': {result}")
+            local_vars[key] = None
+        else:
+            local_vars[key] = result
+
+    return local_vars
 
 
 async def fetch_schema_by_agent_id(agent_id: str) -> dict:

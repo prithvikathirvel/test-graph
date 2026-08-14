@@ -1,5 +1,7 @@
+import json
 import logging
-from typing import Optional
+import time
+from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Request
 from fastapi.responses import JSONResponse
 from langgraph.types import Command
@@ -7,13 +9,15 @@ from langgraph.types import Command
 # --- Local Project Imports ---
 from app.core.config import settings, DEFAULT_VOICE_CONFIG
 from app.core.logger import trace_ctx
-from app.core.model import InvokeReq, ResumeReq
+from app.core.model import InvokeReq, ResumeReq, NodeTestRequest
 from app.core.helpers import (
-    fetch_schema_by_agent_id, 
-    get_and_compile_graph, 
-    format_exact_response
+    fetch_schema_by_agent_id,
+    get_and_compile_graph,
+    format_exact_response,
+    resolve_inputs,
 )
-from app.core.token_tracker import start_tracking, get_tracker
+from app.core.token_tracker import start_tracking, get_tracker, price_from_summary
+from app.engine.registry import NodeRegistry
 from app.services.voice.service import UniversalVoiceService, should_run_stt
 
 logger = logging.getLogger(__name__)
@@ -115,9 +119,7 @@ async def invoke(agent_id: str, req: InvokeReq, request: Request):
     try:
         graph, schema = await get_and_compile_graph(agent_id, request)
 
-        variables = {}
-        for inp in schema.get("inputs", []):
-            variables[inp["key"]] = inp.get("value", "")
+        variables = await resolve_inputs(schema.get("inputs", []))
 
         user_message = req.userInput.message if req.userInput else ""
         if req.voice_enabled and req.userInput and req.userInput.voiceInput:
@@ -150,17 +152,20 @@ async def invoke(agent_id: str, req: InvokeReq, request: Request):
         # ── AOP: Collect token usage summary ────────────────────
         tracker = get_tracker()
         token_summary = tracker.summary() if tracker else {}
-        
+        price_usage   = price_from_summary(tracker) if tracker else {}
+
         if snapshot.next:
             interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
             logger.info(f"⏸️ Flow '{agent_id}' PAUSED for input at: {snapshot.next}")
             resp = await format_exact_response("PAUSED", result, req, request, interrupt_data)
             resp["token_usage"] = token_summary
+            resp["price_usage"] = price_usage
             return resp
-        
+
         logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully.")
         resp = await format_exact_response("COMPLETED", result, req, request)
         resp["token_usage"] = token_summary
+        resp["price_usage"] = price_usage
         return resp
     except Exception as e:
         logger.error(f"❌ Invoke Error for {agent_id}: {str(e)}", exc_info=True)
@@ -203,17 +208,20 @@ async def resume(agent_id: str, req: ResumeReq, request: Request):
         # ── AOP: Collect token usage summary ────────────────────
         tracker = get_tracker()
         token_summary = tracker.summary() if tracker else {}
-        
+        price_usage   = price_from_summary(tracker) if tracker else {}
+
         if snapshot.next:
             interrupt_data = snapshot.tasks[0].interrupts[0].value if snapshot.tasks[0].interrupts else {}
             logger.info(f"⏸️ Flow '{agent_id}' PAUSED again at: {snapshot.next}")
             resp = await format_exact_response("PAUSED", result, req, request, interrupt_data, final_user_message=user_response)
             resp["token_usage"] = token_summary
+            resp["price_usage"] = price_usage
             return resp
-        
+
         logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully after resumption.")
         resp = await format_exact_response("COMPLETED", result, req, request, final_user_message=user_response)
         resp["token_usage"] = token_summary
+        resp["price_usage"] = price_usage
         return resp
 
     except (KeyError, ValueError) as e:
@@ -251,3 +259,78 @@ async def resume(agent_id: str, req: ResumeReq, request: Request):
     except Exception as e:
         logger.error(f"❌ Resume Error for {agent_id}: {str(e)}", exc_info=True)
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# ==========================================
+# NODE ISOLATION TESTING
+# ==========================================
+
+def _safe_json(obj: Any) -> Any:
+    """Coerce ObjectId / datetime / etc. to strings before JSONResponse."""
+    return json.loads(json.dumps(obj, default=str))
+
+
+@router.get("/nodes")
+async def list_registered_nodes():
+    """Return all node types currently registered in NodeRegistry."""
+    return JSONResponse(content={
+        "success": True,
+        "count":   len(NodeRegistry._executors),
+        "nodes":   sorted(NodeRegistry._executors.keys()),
+    })
+
+
+@router.post("/nodes/test")
+async def test_node(req: NodeTestRequest):
+    """Execute one node in isolation — no graph, no checkpointer, no flow side-effects."""
+    try:
+        executor = NodeRegistry.get_executor(req.node_name)
+    except NotImplementedError:
+        raise HTTPException(status_code=404, detail={
+            "error": f"Node '{req.node_name}' not registered.",
+            "available": sorted(NodeRegistry._executors.keys()),
+        })
+
+    config: Dict[str, Any] = {
+        "node_id":          req.node_config.get("node_id", "test-node-001"),
+        "name":             req.node_config.get("name", req.node_name),
+        "displayName":      req.node_config.get("displayName", req.node_name),
+        "inputParameters":  req.node_config.get("inputParameters", []),
+        "outputParameters": req.node_config.get("outputParameters", [{"key": "output", "value": "result"}]),
+        # forward extra fields: loopPath, completePath, pathMap, etc.
+        **{k: v for k, v in req.node_config.items()
+           if k not in ("node_id", "name", "displayName", "inputParameters", "outputParameters")},
+    }
+
+    # Synthetic FlowState — same shape as the TypedDict; nothing is persisted
+    state: Dict[str, Any] = {
+        "session_id":             "test-session",
+        "user_id":                "test-user",
+        "thread_id":              "test-thread",
+        "variables":              req.variables,
+        "messages":               req.messages,
+        "current_iteration_item": None,
+        "error":                  None,
+    }
+
+    start_tracking()
+    t0 = time.perf_counter()
+
+    try:
+        result = await executor(state, config)
+    except Exception as exc:
+        logger.error(f"Node test failed [{req.node_name}]: {exc}", exc_info=True)
+        raise HTTPException(status_code=500, detail=str(exc))
+
+    duration_ms = round((time.perf_counter() - t0) * 1000, 2)
+    tracker     = get_tracker()
+
+    return JSONResponse(content=_safe_json({
+        "success":        True,
+        "node_name":      req.node_name,
+        "duration_ms":    duration_ms,
+        "output":         result.get("variables", {}),
+        "messages_added": len(result.get("messages", [])),
+        "token_usage":    tracker.summary() if tracker else {},
+        "price_usage":    price_from_summary(tracker) if tracker else {},
+    }))

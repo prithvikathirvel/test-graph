@@ -141,6 +141,57 @@ def get_tracker() -> Optional[TokenTracker]:
     return token_tracker_ctx.get()
 
 
+# USD per 1 million tokens: (input_price, output_price)
+_PRICING: Dict[str, tuple] = {
+    "gemini-2.5-pro":   (3.50,  10.50),
+    "gemini-2.5-flash": (0.30,   2.50),
+    "gemini-2.0-flash": (0.10,   0.40),
+    "gemini-1.5-pro":   (1.25,   5.00),
+    "gemini-1.5-flash": (0.075,  0.30),
+    "llama-3.3-70b":    (0.90,   0.90),
+    "llama-3.1-70b":    (0.90,   0.90),
+    "llama-3.1-8b":     (0.20,   0.20),
+    "llama3":           (0.90,   0.90),
+}
+_DEFAULT_PRICING = (1.00, 2.00)   # fallback for unrecognised models
+_USD_TO_INR = 84.0
+
+
+def price_from_summary(tracker: TokenTracker) -> Dict[str, Any]:
+    """Compute cost breakdown in USD and INR from a completed tracker."""
+    total_usd = 0.0
+    per_call: List[Dict[str, Any]] = []
+
+    for call in tracker.calls:
+        model_key = call.model.lower()
+        input_price, output_price = _DEFAULT_PRICING
+        for pattern, rates in _PRICING.items():
+            if pattern in model_key:
+                input_price, output_price = rates
+                break
+
+        input_cost  = (call.prompt_tokens     / 1_000_000) * input_price
+        output_cost = (call.completion_tokens / 1_000_000) * output_price
+        call_cost   = input_cost + output_cost
+        total_usd  += call_cost
+
+        per_call.append({
+            "node_id":         call.node_id,
+            "model":           call.model,
+            "input_cost_usd":  round(input_cost,  8),
+            "output_cost_usd": round(output_cost, 8),
+            "call_cost_usd":   round(call_cost,   8),
+        })
+
+    total_inr = total_usd * _USD_TO_INR
+    return {
+        "total_usd":     round(total_usd,  6),
+        "total_inr":     round(total_inr,  4),
+        "exchange_rate": f"1 USD = {_USD_TO_INR} INR",
+        "per_call":      per_call,
+    }
+
+
 # ── 3. LangChain Callback Handler (the AOP "advice") ─────────────────────────
 
 class TokenCallbackHandler(BaseCallbackHandler):

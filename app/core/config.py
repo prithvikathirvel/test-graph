@@ -6,6 +6,7 @@ class Settings(BaseSettings):
     MONGO_DB_NAME: str = "agent_studio"
     MONGO_CHECKPOINTER_COLLECTION_NAME: str = "langgraph_checkpoints"
     SCHEMA_API_URL: str = "https://apidev.sifymodernization.digital/ai/api/agent-studio/agent-flow/"
+    DICTIONARY_API_URL: str = "https://apidev.sifymodernization.digital/ai/api/agent-studio/dictionary/name/"
     SMTP_USER : str = "aakashchandha1@gmail.com"
     SMTP_PASSWORD : str = "wzie abbf cigm qida"
     SMTP_SERVER : str = "smtp.gmail.com"

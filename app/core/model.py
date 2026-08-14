@@ -58,3 +58,9 @@ class MCPToolCall(BaseModel):
     server_id: str
     tool_name: str
     arguments: Dict[str, Any]
+
+class NodeTestRequest(BaseModel):
+    node_name: str = Field(description="Exact registered name, e.g. 'API caller'")
+    node_config: Dict[str, Any] = Field(description="inputParameters, outputParameters, and any extra node fields")
+    variables: Dict[str, Any] = Field(default_factory=dict, description="Pre-populated FlowState.variables")
+    messages: List[Any] = Field(default_factory=list, description="Optional chat history for LLM nodes")
