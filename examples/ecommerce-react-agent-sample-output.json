@@ -1,0 +1,120 @@
+{
+  "paused_example": {
+    "agent_response": "Approve 'cancel_cart' for 1? Risk: high_impact_write.",
+    "payload": {
+      "node_id": "Commerce_ReAct_4",
+      "node_name": "Commerce Operations ReAct Agent",
+      "node_type": "tool_approval",
+      "input_type": "approval",
+      "question": "Approve 'cancel_cart' for 1? Risk: high_impact_write.",
+      "approval": {
+        "type": "tool_approval",
+        "request_id": "tool_example_cancel_001",
+        "tool": "cancel_cart",
+        "risk": "high_impact_write",
+        "arguments": {
+          "cart_id": 1,
+          "user_id": "1"
+        },
+        "allowed_decisions": [
+          "approve",
+          "reject"
+        ],
+        "reason_code": "MATCHED_RULE_HIGH_IMPACT_WRITE"
+      },
+      "options": {
+        "approve": "Approve",
+        "reject": "Reject"
+      }
+    },
+    "response_type": "QUESTION",
+    "session_id": "session-commerce-demo",
+    "status": "PAUSED",
+    "thread_id": "thread-commerce-demo",
+    "user_id": "1"
+  },
+  "resume_decision_example": {
+    "agent_id": "commerce_react_full_power_demo_v2",
+    "user_id": "1",
+    "session_id": "session-commerce-demo",
+    "thread_id": "thread-commerce-demo",
+    "node_id": "Commerce_ReAct_4",
+    "input_type": "approval",
+    "user_response": {
+      "request_id": "tool_example_cancel_001",
+      "decision": "approve"
+    }
+  },
+  "completed_example": {
+    "agent_response": {
+      "status": "COMPLETED",
+      "answer": "Cart 1 was inspected. The demo cancellation, mock refund, support case, and mock notification were completed after approval.",
+      "task_summary": null,
+      "actions": [
+        {
+          "tool": "get_cart",
+          "status": "SUCCEEDED",
+          "risk": "read_sensitive",
+          "external_reference": "1",
+          "request_id": "tool_example_read_001"
+        },
+        {
+          "tool": "cancel_cart",
+          "status": "SUCCEEDED",
+          "risk": "high_impact_write",
+          "external_reference": "1",
+          "request_id": "tool_example_cancel_001"
+        },
+        {
+          "tool": "issue_mock_refund",
+          "status": "SUCCEEDED",
+          "risk": "financial",
+          "external_reference": "101",
+          "request_id": "tool_example_refund_001"
+        },
+        {
+          "tool": "create_support_case",
+          "status": "SUCCEEDED",
+          "risk": "reversible_write",
+          "external_reference": "101",
+          "request_id": "tool_example_case_001"
+        },
+        {
+          "tool": "send_customer_notification",
+          "status": "SUCCEEDED",
+          "risk": "external_communication",
+          "external_reference": "101",
+          "request_id": "tool_example_notify_001"
+        }
+      ],
+      "citations": [],
+      "artifacts": [],
+      "needs_input": null,
+      "pending_approval": null,
+      "error": null,
+      "run": {
+        "model_calls": 9,
+        "tool_calls": 5,
+        "elapsed_ms": 16420.5,
+        "terminated_by_budget": false
+      }
+    },
+    "payload": null,
+    "response_type": "GENERIC",
+    "session_id": "session-commerce-demo",
+    "status": "COMPLETED",
+    "thread_id": "thread-commerce-demo",
+    "user_id": "1",
+    "token_usage": {
+      "total_llm_calls": 9,
+      "total_prompt_tokens": 7200,
+      "total_completion_tokens": 1200,
+      "total_tokens": 8400
+    },
+    "price_usage": {
+      "total_usd": 0.025,
+      "total_inr": 2.1
+    }
+  },
+  "note": "All IDs, token counts, costs, timings, and action ordering in this file are illustrative. Public demo APIs simulate writes and do not perform real commerce actions."
+}

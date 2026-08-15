@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.agents.schemas import json_schema_to_pydantic
+from app.agents.tool_catalog import _normalize_mcp_result
 from app.core.redaction import redact_data, safe_log_value
 from app.engine.cache import GraphCache
 
@@ -51,6 +52,22 @@ def test_nested_json_schema_is_enforced():
                 "reason": "invented",
             }
         )
+
+
+def test_v2_mcp_result_unwraps_structured_text():
+    result = _normalize_mcp_result(
+        {
+            "success": True,
+            "data": [
+                {
+                    "type": "text",
+                    "text": '{"ticket_id":"T-1","status":"open"}',
+                }
+            ],
+        }
+    )
+
+    assert result == {"ticket_id": "T-1", "status": "open"}
 
 
 def test_redaction_covers_nested_secrets_and_caps_logs():

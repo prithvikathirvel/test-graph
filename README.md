@@ -6,7 +6,9 @@ Agent Studio Backend is a robust FastAPI-based engine designed to compile, execu
 
 ## Architecture and ReAct Agent Blueprint
 
-For the full codebase review, prioritized improvement plan, 2026 agent-harness design, guardrails, implementation examples, and backward-compatible ReAct Agent v2 JSON specification, see [`REACT_AGENT_2026_BLUEPRINT.md`](REACT_AGENT_2026_BLUEPRINT.md).
+- For the full codebase review and implementation blueprint, see [`REACT_AGENT_2026_BLUEPRINT.md`](REACT_AGENT_2026_BLUEPRINT.md).
+- For focused runtime behavior, schema fields, complete sample flow JSON, approval/resume calls, and output examples, see [`REACT_AGENT_USAGE_GUIDE.md`](REACT_AGENT_USAGE_GUIDE.md).
+- For ready-to-copy node JSON, a full public-API test flow, and the single-file Next.js React Flow component, see [`examples/`](examples/README.md).
 
 ## Key Features
 

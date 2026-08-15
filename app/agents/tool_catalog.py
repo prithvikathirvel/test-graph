@@ -55,6 +55,27 @@ def _find_mcp_tool(server_id: str, name: str) -> Any:
     return None
 
 
+def _normalize_mcp_result(result: Any) -> Any:
+    """Expose useful MCP data to v2 schemas while retaining errors."""
+    if not isinstance(result, dict) or result.get("success") is not True:
+        return result
+    content = result.get("data")
+    if not isinstance(content, list) or not content:
+        return result
+
+    values: list[Any] = []
+    for item in content:
+        if not isinstance(item, dict) or "text" not in item:
+            values.append(item)
+            continue
+        text = item.get("text", "")
+        try:
+            values.append(json.loads(text))
+        except (json.JSONDecodeError, TypeError):
+            values.append(text)
+    return values[0] if len(values) == 1 else values
+
+
 def _legacy_or_typed_schema(
     tool: ToolSpec, spec: AgentNodeSpec, native_schema: dict[str, Any] | None = None
 ) -> type[BaseModel]:
@@ -107,7 +128,8 @@ def build_guarded_tool(
                 tool_name=actual_mcp_name,
                 arguments=llm_args,
             )
-            return await mcp_client_manager.call_tool(request)
+            result = await mcp_client_manager.call_tool(request)
+            return result if spec.is_legacy else _normalize_mcp_result(result)
 
         # Existing fallback keeps every currently registered node usable as an
         # agent tool.  The node gets an isolated variable view per call.
