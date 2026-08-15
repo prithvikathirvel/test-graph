@@ -1,0 +1,248 @@
+{
+  "_readme": "Copy-paste library of ReAct Agent v2 tool definitions — one per node type in the registry. Drop any of these objects into the 'tools' inputParameter of an 'Autonomous ReAct Agent v2' node. Every 'config' key below matches the real input key that node reads in app/nodes/*.py.",
+
+  "tools": [
+
+    {
+      "_pattern": "REST GET — path + query parameters",
+      "name": "Search Products",
+      "description": "Search the catalogue by keywords. Returns up to 5 products with id, title, price, rating and stock.",
+      "node_type": "API caller",
+      "config": {
+        "url": "https://dummyjson.com/products/search?q={{q}}&limit=5&select=id,title,price,rating,stock",
+        "method": "GET",
+        "headers": { "Accept": "application/json" },
+        "timeout": "20"
+      },
+      "parameters": [
+        { "name": "q", "type": "string", "required": true, "description": "One or two keywords.", "example": "phone" }
+      ]
+    },
+
+    {
+      "_pattern": "REST POST — JSON body, mixed LLM + engine values",
+      "name": "Add To Cart",
+      "description": "Add a product to the shopper's cart. You must know the numeric product id first.",
+      "node_type": "API caller",
+      "config": {
+        "url": "https://dummyjson.com/carts/add",
+        "method": "POST",
+        "headers": { "Content-Type": "application/json" },
+        "data": {
+          "userId": "{{shopper_id}}",
+          "products": [ { "id": "{{product_id}}", "quantity": "{{quantity}}" } ]
+        },
+        "timeout": "20"
+      },
+      "parameters": [
+        { "name": "product_id", "type": "integer", "required": true, "description": "Numeric product id." },
+        { "name": "quantity",   "type": "integer", "required": true, "description": "Units to add. Use 1 by default." }
+      ]
+    },
+
+    {
+      "_pattern": "Vector knowledge base — the query is the only LLM-controlled field",
+      "name": "Search Knowledge Base",
+      "description": "Search the internal knowledge base for how-tos, policies and known fixes. Use this before answering any 'how do I' question.",
+      "node_type": "Knowledge Retrieval Node",
+      "config": {
+        "knowledge_base_name": "it-kb",
+        "user_prompt": "{{search_query}}",
+        "limit": "5",
+        "max_distance": "0.7"
+      },
+      "parameters": [
+        { "name": "search_query", "type": "string", "required": true,
+          "description": "What to look for, in plain words.", "example": "VPN disconnects on Windows 11" }
+      ]
+    },
+
+    {
+      "_pattern": "Web search — note the real keys are search_query / search_count",
+      "name": "Web Search",
+      "description": "Search the public internet. Use only when the knowledge base has nothing and the topic is public.",
+      "node_type": "Web Search",
+      "config": { "search_query": "{{query}}", "search_count": "3" },
+      "parameters": [
+        { "name": "query", "type": "string", "required": true, "description": "Public search query." }
+      ]
+    },
+
+    {
+      "_pattern": "Database read — Mongo find with an LLM-supplied filter value",
+      "name": "Lookup Asset",
+      "description": "Look up the hardware assigned to an employee (model, asset tag, warranty end) from the CMDB.",
+      "node_type": "Mongo DB caller",
+      "config": {
+        "mongoUri": "{{MONGO_URI}}",
+        "dbName": "agent_studio",
+        "collectionName": "cmdb_assets",
+        "task": "fetch",
+        "conditions": { "assigned_to": "{{employee_email}}" }
+      },
+      "parameters": [
+        { "name": "employee_email", "type": "string", "required": true,
+          "description": "Email of the employee whose asset you need." }
+      ]
+    },
+
+    {
+      "_pattern": "Database write — Mongo insert with a whole object from the LLM",
+      "name": "Log Feedback",
+      "description": "Store the shopper's feedback so the team can review it. Use when the user complains or praises something.",
+      "node_type": "Mongo DB caller",
+      "config": {
+        "mongoUri": "{{MONGO_URI}}",
+        "dbName": "agent_studio",
+        "collectionName": "shopper_feedback",
+        "task": "insert",
+        "document": {
+          "session_id": "{{session_id}}",
+          "sentiment": "{{sentiment}}",
+          "note": "{{note}}"
+        }
+      },
+      "parameters": [
+        { "name": "sentiment", "type": "string", "required": true, "enum": ["positive", "neutral", "negative"],
+          "description": "Overall tone of the feedback." },
+        { "name": "note", "type": "string", "required": true, "description": "The feedback in the shopper's own words." }
+      ]
+    },
+
+    {
+      "_pattern": "Natural-language SQL — hand the sub-question to another engine",
+      "name": "Ask Sales Database",
+      "description": "Answer questions about orders, revenue and customers by querying the sales SQL database in plain English.",
+      "node_type": "Chat with DB",
+      "config": {
+        "db_uri": "{{SALES_DB_URI}}",
+        "user_query": "{{question}}",
+        "model": "llama3",
+        "memory_window": "0"
+      },
+      "parameters": [
+        { "name": "question", "type": "string", "required": true,
+          "description": "A single, self-contained question about the sales data.",
+          "example": "total revenue for October 2025 by region" }
+      ]
+    },
+
+    {
+      "_pattern": "Side effect — email, with a confirmation-first description",
+      "name": "Email Summary",
+      "description": "Send an email to the user. Only call this after the user has explicitly asked you to email something.",
+      "node_type": "Send Email",
+      "config": {
+        "from": "no-reply@sify.com",
+        "to": "{{user_email}}",
+        "subject": "{{subject}}",
+        "body": "{{body}}"
+      },
+      "parameters": [
+        { "name": "subject", "type": "string", "required": true, "description": "Short subject line." },
+        { "name": "body",    "type": "string", "required": true, "description": "Full email body in plain text." }
+      ]
+    },
+
+    {
+      "_pattern": "Classifier as a tool — fixed label set",
+      "name": "Classify Intent",
+      "description": "Classify a customer message into one of the supported intents. Use it when you are unsure which workflow applies.",
+      "node_type": "Question Classifier",
+      "config": {
+        "input_text": "{{text}}",
+        "model": "llama3",
+        "instructions": "Pick the single best matching intent.",
+        "classifications": ["order_status", "refund", "product_question", "complaint", "other"]
+      },
+      "parameters": [
+        { "name": "text", "type": "string", "required": true, "description": "The message to classify." }
+      ]
+    },
+
+    {
+      "_pattern": "Entity extraction — schema fixed, text from the LLM",
+      "name": "Extract Entities",
+      "description": "Pull structured entities (product, brand, budget) out of a sentence.",
+      "node_type": "Vocabulary Extractor",
+      "config": {
+        "user_query": "{{text}}",
+        "entity_schema": ["product", "brand", "budget", "colour"]
+      },
+      "parameters": [
+        { "name": "text", "type": "string", "required": true, "description": "Sentence to analyse." }
+      ]
+    },
+
+    {
+      "_pattern": "Another whole flow as one tool (sub-agent)",
+      "name": "Run Refund Workflow",
+      "description": "Run the full refund workflow for an order. Use only when the customer explicitly asks for a refund.",
+      "node_type": "Agent Flow Node",
+      "config": {
+        "agent_id": "refund_workflow_v1",
+        "input_mapping": {
+          "order_id": "{{order_id}}",
+          "reason": "{{reason}}",
+          "CHAT_QUERY": "Process refund for {{order_id}}"
+        }
+      },
+      "parameters": [
+        { "name": "order_id", "type": "string", "required": true, "description": "Order id to refund." },
+        { "name": "reason",   "type": "string", "required": true, "description": "Why the customer wants a refund." }
+      ]
+    },
+
+    {
+      "_pattern": "A second LLM as a tool — user_message_key points at a tool argument",
+      "name": "Summarise Text",
+      "description": "Summarise a long piece of text into three bullet points.",
+      "node_type": "LLM invoker",
+      "config": {
+        "Model": "llama3",
+        "Prompt": "Summarise the user's text into exactly three short bullet points.",
+        "user_message_key": "text_to_summarise",
+        "use_memory": "false",
+        "Response Format": "text"
+      },
+      "parameters": [
+        { "name": "text_to_summarise", "type": "string", "required": true,
+          "description": "The text that needs summarising." }
+      ]
+    },
+
+    {
+      "_pattern": "Zero-argument tool — everything comes from flow state",
+      "name": "View Cart",
+      "description": "Show the shopper's current cart and totals. Takes no arguments.",
+      "node_type": "API caller",
+      "config": {
+        "url": "https://dummyjson.com/carts/user/{{shopper_id}}",
+        "method": "GET",
+        "headers": { "Accept": "application/json" }
+      },
+      "parameters": []
+    },
+
+    {
+      "_pattern": "Auto-inferred arguments — no 'parameters' block at all",
+      "name": "Get Ticket Status",
+      "description": "Fetch the live status of a helpdesk ticket by its id.",
+      "node_type": "API caller",
+      "config": {
+        "url": "{{HELPDESK_BASE}}/tickets/{{ticket_id}}",
+        "method": "GET",
+        "headers": { "Authorization": "Bearer {{HELPDESK_TOKEN}}" }
+      }
+    },
+
+    {
+      "_pattern": "MCP tool — schema comes from the remote server, never declare parameters",
+      "name": "Jira Search",
+      "description": "Search engineering Jira issues.",
+      "node_type": "MCP Tool",
+      "config": { "server_id": "atlassian", "tool_name": "jira_search" }
+    }
+
+  ]
+}

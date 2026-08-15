@@ -21,6 +21,7 @@
 11. [No more recursion errors (iteration budget)](#11-no-more-recursion-errors-iteration-budget)
 12. [Ready-to-run showcase flow (Llama 3)](#12-ready-to-run-showcase-flow-llama-3)
 15. [E-commerce test flow on live public APIs (DummyJSON)](#15-e-commerce-test-flow-on-live-public-apis-dummyjson)
+16. [How the tool template adapts to each node type](#16-how-the-tool-template-adapts-to-each-node-type)
 13. [Scenario matrix — what to configure for what](#13-scenario-matrix--what-to-configure-for-what)
 14. [Migration from v1 + troubleshooting](#14-migration-from-v1--troubleshooting)
 
