@@ -1,4 +1,5 @@
 {
+  "_naming_note": "If a parameter name also exists as a flow variable: a DECLARED parameter always wins for that call (the flow variable is never modified), while an AUTO-INFERRED placeholder is skipped and the state value is used instead. Empty/unset variables never count as engine-filled. Prefix names per tool (classify_text, summarise_text) when collisions are likely.",
   "_readme": "Copy-paste library of ReAct Agent v2 tool definitions — one per node type in the registry. Drop any of these objects into the 'tools' inputParameter of an 'Autonomous ReAct Agent v2' node. Every 'config' key below matches the real input key that node reads in app/nodes/*.py.",
 
   "tools": [

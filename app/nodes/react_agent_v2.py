@@ -195,7 +195,24 @@ def _schema_from_declaration(params: List[dict], model_name: str):
     return create_model(model_name, **fields)
 
 
-def _infer_params_from_config(config: Any, known_vars: dict) -> List[dict]:
+def _state_can_fill(key: str, known_vars: dict) -> bool:
+    """
+    True only when the flow state holds a REAL value for `key`.
+    An empty string / None (e.g. a declared-but-unset flow input like
+    `user_name: ""`) must NOT be treated as engine-filled, otherwise the tool
+    would silently run with a blank value instead of asking the model.
+    """
+    if key not in known_vars:
+        return False
+    value = known_vars.get(key)
+    if value is None:
+        return False
+    if isinstance(value, str) and not value.strip():
+        return False
+    return True
+
+
+def _infer_params_from_config(config: Any, known_vars: dict) -> tuple:
     """
     Auto-inference: any `{{placeholder}}` still sitting inside the tool config
     that the flow state CANNOT fill becomes an argument the LLM must supply.
@@ -203,16 +220,23 @@ def _infer_params_from_config(config: Any, known_vars: dict) -> List[dict]:
       "config": {"url": "https://hd/api/tickets/{{ticket_id}}"}
         → argument: ticket_id (string, required)
 
-    Placeholders that already exist in state (e.g. {{HELPDESK_TOKEN}}) are left
-    alone — the agent must never be asked to invent a secret.
+    Placeholders that already hold a real value in state (e.g. {{HELPDESK_TOKEN}})
+    are left alone — the agent must never be asked to invent a secret.
+
+    Returns (inferred_params, prefilled_keys) so the caller can log exactly which
+    placeholders the engine is filling behind the model's back.
     """
     found: Dict[str, dict] = {}
+    prefilled: List[str] = []
 
     def scan(node: Any):
         if isinstance(node, str):
             for match in PLACEHOLDER_RE.findall(node):
                 root = match.split(".")[0].split("[")[0]
-                if root in known_vars or root in found:
+                if root in found or root in prefilled:
+                    continue
+                if _state_can_fill(root, known_vars):
+                    prefilled.append(root)
                     continue
                 found[root] = {
                     "name": root,
@@ -228,7 +252,7 @@ def _infer_params_from_config(config: Any, known_vars: dict) -> List[dict]:
                 scan(v)
 
     scan(config)
-    return list(found.values())
+    return list(found.values()), prefilled
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -286,10 +310,23 @@ def _build_tool(tool_def: dict, state: FlowState, trace: List[dict]) -> Optional
     if declared:
         schema_model = _schema_from_declaration(declared, f"{tool_name}_Args")
         param_names = [p.get("name") or p.get("key") for p in declared if isinstance(p, dict)]
+        # A declared argument always WINS over a same-named flow variable for this
+        # call (kwargs are merged on top of state). Surface it so nobody is surprised.
+        shadowed = [p for p in param_names if _state_can_fill(str(p), variables)]
+        if shadowed:
+            logger.info(
+                f"🧩 Tool '{tool_name}': argument(s) {shadowed} shadow existing flow variable(s) "
+                "— the model's value wins for this call; the flow variable is not modified."
+            )
     else:
-        inferred = _infer_params_from_config(base_config, variables)
+        inferred, prefilled = _infer_params_from_config(base_config, variables)
         schema_model = _schema_from_declaration(inferred, f"{tool_name}_Args")
         param_names = [p["name"] for p in inferred]
+        if prefilled:
+            logger.info(
+                f"🧩 Tool '{tool_name}': placeholder(s) {prefilled} are filled from flow state "
+                "(not exposed to the model). Declare them under 'parameters' if the model should choose them."
+            )
 
     try:
         executor = NodeRegistry.get_executor(node_type)

@@ -872,6 +872,30 @@ A ready-to-paste library of all of these lives in **`examples/tool_templates.jso
 
 Tool arguments are merged into a copy of `state.variables`, so `LLM invoker` picks the text up from the variable named in `user_message_key` — no placeholder needed.
 
+### What if the parameter name already exists in flow state?
+
+Short answer: **declared parameters always win; auto-inferred ones step aside.** Tools never mutate the real flow state either way.
+
+| Situation | What happens | Verdict |
+|---|---|---|
+| `parameters` declares `text`, and `text` also exists in flow variables | The model is asked for `text`; its value is merged **on top** of a *copy* of state, so the model's value is used. A `🧩` log line records the shadowing. The real `variables["text"]` is unchanged. | ✅ safe |
+| No `parameters` block, `{{text}}` in config, and `text` holds a real value in state | The placeholder is **not** exposed to the model — the tool runs with the state value and takes zero arguments. A `🧩` log line says which placeholders were pre-filled. | ⚠️ intended for tokens/ids; declare the parameter if the model should choose it |
+| No `parameters` block, `{{text}}` in config, and `text` is missing **or empty (`""`/`null`)** | It becomes a required argument for the model. | ✅ safe |
+| Two different tools both use a parameter called `text` | Each call builds its own `dict(state)` copy, so values never bleed between tools or between calls. | ✅ isolated |
+| A tool writes output | Captured into a per-tool temp key (`_react2_out_<tool>`) inside the copy — never into the flow's real variables. | ✅ no pollution |
+
+Verified behaviour (real run):
+
+```
+A) declared      -> LLM args: ['text']  -> classified "where is my parcel"       (model wins)
+B) auto-inferred -> LLM args: []        -> classified "LEFTOVER VALUE FROM ..."  (state wins)
+C) two tools     -> tool1 "AAA", tool3 "BBB", flow variable 'text' unchanged
+E) empty state var -> LLM args: ['user_name']   (empty never counts as engine-filled)
+F) secret in state -> LLM args: ['ticket_id']   ({{TOKEN}} stays hidden)
+```
+
+**Rule of thumb:** if the model should decide it, *declare it*. If it is a token, id or setting the flow owns, leave it as a bare `{{placeholder}}`. When names could collide, prefix them per tool (`classify_text`, `summarise_text`) so the intent is obvious in logs and traces.
+
 ### Checklist for a new tool
 
 1. Open the node's file in `app/nodes/` and copy its `inputs.get("…")` keys into `config`.
