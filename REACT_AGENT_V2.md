@@ -17,8 +17,11 @@
 7. [Worked examples with real JSON + real conversation](#7-worked-examples-with-real-json--real-conversation)
 8. [How memory works now (the "it forgot my name" fix)](#8-how-memory-works-now-the-it-forgot-my-name-fix)
 9. [How tools are called correctly now](#9-how-tools-are-called-correctly-now)
-10. [Scenario matrix — what to configure for what](#10-scenario-matrix--what-to-configure-for-what)
-11. [Migration from v1 + troubleshooting](#11-migration-from-v1--troubleshooting)
+10. [COMPLETED only means COMPLETED (status contract)](#10-completed-only-means-completed-status-contract)
+11. [No more recursion errors (iteration budget)](#11-no-more-recursion-errors-iteration-budget)
+12. [Ready-to-run showcase flow (Llama 3)](#12-ready-to-run-showcase-flow-llama-3)
+13. [Scenario matrix — what to configure for what](#13-scenario-matrix--what-to-configure-for-what)
+14. [Migration from v1 + troubleshooting](#14-migration-from-v1--troubleshooting)
 
 ---
 
@@ -80,6 +83,10 @@ v2 fixes both: the form now has labelled, typed fields, and the assistant checks
 | 18 | **Safe loop budget** | Hard cap on reasoning steps so a confused model can't burn tokens forever | `max_iterations` |
 | 19 | **Works with zero tools** | Becomes a memory-aware chat node | `tools: []` |
 | 20 | **LangGraph-version agnostic** | Detects `prompt` / `state_modifier` / `messages_modifier` automatically | automatic |
+| 21 | **Durable memory write** | Every turn is saved to MongoDB `react_agent_memory`, so memory survives new threads, cleared checkpoints and restarts | `persist_memory` (default on) |
+| 22 | **Honest completion status** | Reports `COMPLETED` only when it truly finished; otherwise `INCOMPLETE` / `FAILED` all the way up to the API response | automatic (§10) |
+| 23 | **Recursion-proof loop** | Counts its own steps and stops before LangGraph's limit; `GraphRecursionError` can never reach the flow | `max_iterations` (§11) |
+| 24 | **Stuck-loop guard** | Same tool + same arguments 3× → stops and summarises | automatic |
 
 **What it deliberately does NOT do:** it does not pause and ask the user mid-loop (use a `Question Node` before/after it), and it does not write to your DB unless you give it a tool that does.
 
@@ -131,7 +138,10 @@ If the loop ended on a tool step, or the model returned content blocks instead o
 | Unknown `node_type` | crashes inside the loop | tool skipped + warning, agent keeps working |
 | Tool failure | `"Tool execution failed: …"` string, no guidance | `TOOL_ERROR: … fix the arguments and retry once` — model recovers |
 | Tool output size | unbounded (context blow-ups) | truncated at 4 000 chars |
-| Memory source | checkpoint only | checkpoint **+ MongoDB fallback** (`memory_mode: auto`) |
+| Memory source | checkpoint only | checkpoint **+ 2 MongoDB stores**, richest wins (`memory_mode: auto`) |
+| Memory write | checkpoint only | checkpoint **+ durable `react_agent_memory`** every turn |
+| Completion status | always `COMPLETED` | `COMPLETED` / `INCOMPLETE` / `FAILED` end-to-end |
+| Recursion | `GraphRecursionError` → HTTP 500 | impossible: own step counter + loop guard + caught safety net |
 | Memory trimming | last *N×2 messages* | last *N human turns*, tool-call integrity preserved |
 | Duplicate question | possible | removed |
 | Orphan tool messages | possible → 400 errors | sanitised |
@@ -208,6 +218,7 @@ react_agent_v2_node(state, node_config)        app/nodes/react_agent_v2.py
 | `temperature` | float | `0` | Creativity |
 | `response_format` | `text`\|`html`\|`json` | `text` | Output shape hint |
 | `return_trace` | bool | `false` | Also emit the structured reasoning trace |
+| `persist_memory` | bool | `true` | Write each turn to MongoDB `react_agent_memory` |
 | `fallback_answer` | string | *"I could not complete that request…"* | Shown if everything fails |
 
 ### 6.2 A tool definition
@@ -246,8 +257,12 @@ Produces:
 | Variable | Content |
 |---|---|
 | `{{agent_response}}` | The final answer text |
+| `{{agent_response_status}}` | `COMPLETED` \| `INCOMPLETE` \| `FAILED` |
+| `{{agent_response_iterations}}` | How many Think→Act cycles were used |
 | `{{agent_response_tool_calls}}` | `[{"tool":"get_ticket_status","args":{"ticket_id":"INC-1042"}}]` |
 | `{{agent_response_trace}}` | Full observations (only when `return_trace: "true"`) |
+| `{{execution_status}}` | Same as `_status` — handy for a Decision Node |
+| `_agent_status_<node_id>` | Internal signal read by the API layer (§10) |
 
 ---
 
@@ -458,7 +473,8 @@ v2 pulls the **real** input schema from the connected MCP server (`mcp_client_ma
         ],
         "outputParameters": [ { "key": "output", "value": "agent_response" } ] },
       { "node_id": "node-3", "type": "output", "name": "End Node",
-        "inputParameters": [ { "key": "final_output", "value": "{{agent_response}}" } ] }
+        "inputParameters":  [ { "key": "final_input", "value": "{{agent_response}}" } ],
+        "outputParameters": [ { "key": "output", "value": "final_output" } ] }
     ],
     "edges": [
       { "source": "node-1", "target": "node-2" },
@@ -474,18 +490,21 @@ v2 pulls the **real** input schema from the connected MCP server (`mcp_client_ma
 
 ## 8. How memory works now (the "it forgot my name" fix)
 
-There are **two** stores in this project, and v1 only used the first:
+There are now **three** stores, and v2 uses all of them (v1 used only the first):
 
 | Store | Key | Written by | Read by |
 |---|---|---|---|
 | LangGraph checkpoint (`checkpoints`) | `thread_id` | the graph itself | `state["messages"]` |
-| `conversation_memory` collection | `session_id` | `save_conversation_turn()` in `helpers.py` | **v2** (fallback) |
+| `react_agent_memory` (**new**) | `session_id` | **the v2 node itself**, every turn, capped at the last 50 turns | v2 first choice on fallback |
+| `conversation_memory` | `session_id` | `save_conversation_turn()` in `helpers.py` | v2 second choice |
+
+The new `react_agent_memory` collection is what makes memory *durable*: it is written by the node itself (`persist_memory: true`), so it contains the exact agent turns even if the flow's `final_output` is transformed by later nodes, and it survives new `thread_id`s, cleared checkpoints and restarts. Writing happens in a worker thread (`asyncio.to_thread`), so it never blocks the event loop, and a Mongo outage only logs a warning — the answer is still returned.
 
 `memory_mode` decides the source:
 
 | Mode | Behaviour | Use when |
 |---|---|---|
-| `auto` *(default)* | checkpoint first; if empty → load from MongoDB by `session_id` | **almost always** |
+| `auto` *(default)* | compares both sources and uses **whichever actually has more turns** (checkpoint vs MongoDB) | **almost always** |
 | `state` | checkpoint only (v1 behaviour) | single-thread flows, tests |
 | `db` | MongoDB only | the UI rotates `thread_id` every message |
 | `off` | stateless | batch/automation flows |
@@ -534,7 +553,194 @@ Five mechanisms, in order of impact:
 
 ---
 
-## 10. Scenario matrix — what to configure for what
+## 10. COMPLETED only means COMPLETED (status contract)
+
+**The problem:** the API used to hardcode `status: "COMPLETED"` for *any* run that reached the end of the graph — even when the agent gave up half-way, hit its step limit or crashed internally. The caller had no way to tell a real answer from a partial one.
+
+**The fix — a 3-layer contract:**
+
+```
+react_agent_v2_node                       app/nodes/react_agent_v2.py
+   writes  variables["_agent_status_<node_id>"] = COMPLETED | INCOMPLETE | FAILED
+           variables["execution_status"]        = same value (for templating)
+           variables["<output>_status"]         = same value (per-node)
+        │
+        ▼
+derive_completion_status(result)          app/core/helpers.py
+   scans every "_agent_status_*" key, returns the WORST one
+   (FAILED > INCOMPLETE > COMPLETED). No signals → COMPLETED (backward compatible).
+        │
+        ▼
+POST /agents/invoke  &  /agents/resume    app/api/agents.py
+   status = derive_completion_status(result)   ← instead of a hardcoded "COMPLETED"
+```
+
+**When each status is emitted**
+
+| Status | Meaning | Cause |
+|---|---|---|
+| `COMPLETED` | The agent finished reasoning and produced its own final answer | normal path |
+| `INCOMPLETE` | A partial answer was produced | `max_iterations` reached, stuck-loop guard, or the recursion safety net |
+| `FAILED` | Only the fallback answer could be produced | model init failure, provider exception, recovery also failed |
+| `PAUSED` | Unchanged — a `Question Node` is waiting for the user | HITL |
+
+**API response, fully answered:**
+
+```json
+{
+  "agent_response": "Done Prithvi — ticket INC-2098 is raised with high priority.",
+  "response_type": "GENERIC",
+  "status": "COMPLETED",
+  "session_id": "sess-77",
+  "thread_id": "thread-77"
+}
+```
+
+**API response, partially answered:**
+
+```json
+{
+  "agent_response": "I found the ticket but the CMDB did not respond.<br><br><i>Note: I could not fully complete this request (INCOMPLETE) after 8 reasoning steps.</i>",
+  "response_type": "GENERIC",
+  "status": "INCOMPLETE",
+  "session_id": "sess-77",
+  "thread_id": "thread-77"
+}
+```
+
+Nothing else changed: `PAUSED` still behaves exactly as before, flows without a ReAct v2 node still report `COMPLETED`, and the answer text is still taken from `variables["final_output"]` for every non-paused status.
+
+**Branch on it inside the flow** with a Decision Node:
+
+```json
+{
+  "node_id": "node-3", "type": "conditions", "name": "Decision Node",
+  "inputParameters": [
+    { "key": "inputValue", "value": "{{execution_status}}" },
+    { "key": "conditions", "value": [
+      { "operator": "equal_to",   "comparisonValue": "COMPLETED", "nextNode": "node-4" },
+      { "operator": "not_equals", "comparisonValue": "COMPLETED", "nextNode": "node-5" }
+    ]}
+  ],
+  "outputParameters": [ { "key": "output", "value": "routing_decision" } ]
+}
+```
+
+---
+
+## 11. No more recursion errors (iteration budget)
+
+**The problem:** v1 handed the loop to LangGraph with `recursion_limit: 50` and hoped. A model that kept calling tools blew straight through it and LangGraph raised `GraphRecursionError`, which killed the whole flow with a 500.
+
+**The fix — stop before the wall, three guards deep:**
+
+```
+Guard 1  Step counter   → every Thought→Action cycle is counted in the node itself.
+                          At `max_iterations` (default 8) we BREAK out of the stream.
+Guard 2  Loop detector  → the same tool with the same arguments 3× → break immediately.
+Guard 3  Safety net     → recursion_limit = max_iterations * 2 + 6, and
+                          GraphRecursionError is CAUGHT (never propagated).
+Then     Recovery       → one tool-free completion summarises what was gathered.
+Result   status         → INCOMPLETE + a real, useful answer. Never a 500.
+```
+
+Because Guard 1 always fires first, Guard 3 is dead code in practice — it exists only so a future LangGraph change can never crash your flow.
+
+**What the logs look like when a model goes in circles:**
+
+```
+🤔 [Thought→Action 1] get_ticket_status {'ticket_id': 'INC-1'}
+🤔 [Thought→Action 2] get_ticket_status {'ticket_id': 'INC-2'}
+🤔 [Thought→Action 3] get_ticket_status {'ticket_id': 'INC-3'}
+🤔 [Thought→Action 4] get_ticket_status {'ticket_id': 'INC-4'}
+🛑 Stopping ReAct loop early (max_iterations) after 4 iteration(s) — summarising what we have instead of recursing.
+No final answer from loop (max_iterations) — running recovery completion.
+🏁 ReAct v2 finished | status=INCOMPLETE | reason=max_iterations | iterations=4 | tools_called=4
+```
+
+And when it repeats itself:
+
+```
+🛑 Stopping ReAct loop early (repeated_tool_call) after 3 iteration(s) — summarising what we have instead of recursing.
+```
+
+Tuning: `max_iterations: 4` for triage bots, `8` (default) for support agents, `12` for research agents. Each iteration ≈ 1 LLM call + 1 tool call, so it is also your cost ceiling.
+
+---
+
+## 12. Ready-to-run showcase flow (Llama 3)
+
+File: **`examples/react_agent_v2_llama3_flow.json`** — a complete, importable flow schema that exercises everything at once.
+
+```
+Start ──► Autonomous ReAct Agent v2 (llama3) ──► Decision: execution_status
+                                                    ├─ COMPLETED  ──► End "fully answered"
+                                                    └─ otherwise  ──► End "partial answer" (+ note)
+```
+
+The agent carries **six tools** covering every integration style in the engine:
+
+| Tool | `node_type` | Argument style | Shows off |
+|---|---|---|---|
+| `search_knowledge_base` | `Knowledge Retrieval Node` | declared | vector KB retrieval |
+| `get_ticket_status` | `API caller` | declared | REST **GET** with a path parameter |
+| `create_ticket` | `API caller` | declared (+ `enum`) | REST **POST** with a JSON body + constrained values |
+| `lookup_asset` | `Mongo DB caller` | declared | database read as a tool |
+| `web_search` | `Web Search` | declared | public internet fallback |
+| `jira_search` | `MCP Tool` | remote schema | MCP direct injection (skipped safely if offline) |
+
+Secrets (`HELPDESK_TOKEN`, `HELPDESK_BASE`, `MONGO_URI`, `user_email`) live in the flow `inputs`, so the engine fills them and the model never sees them.
+
+**Model:** `"model": "llama3"` → `_get_llm()` routes it to `meta/llama-3.3-70b-instruct` on your `OPENAI_BASE_URL` endpoint (`app/nodes/agents.py`).
+
+**Turn 1**
+
+```json
+POST /engine/agents/invoke/react_v2_showcase_llama3
+{
+  "agent_id": "react_v2_showcase_llama3",
+  "user_id": "u-9", "session_id": "sess-77", "thread_id": "thread-77",
+  "userInput": { "message": "Hi, I'm Prithvi. My VPN keeps dropping on Windows 11 - any fix?" }
+}
+```
+
+```
+🧠 Memory: 0 message(s) in context (mode=auto→checkpoint, window=10).
+🤔 [Thought→Action 1] search_knowledge_base {'search_query': 'VPN drops Windows 11'}
+✅ [Observation] {"context": "1) Update client 2) Disable IPv6 3) TCP mode ..."}
+🗣️ [Answer] Hi Prithvi! Try these in order: ...
+🏁 ReAct v2 finished | status=COMPLETED | reason=natural_finish | iterations=1 | tools_called=1
+```
+
+→ `"status": "COMPLETED"`
+
+**Turn 2 (memory + two tools, and note the thread_id changed on purpose)**
+
+```json
+{
+  "session_id": "sess-77", "thread_id": "thread-NEW-999",
+  "userInput": { "message": "That didn't work. Raise a high priority ticket and tell me my laptop model." }
+}
+```
+
+```
+🧠 Memory: using MongoDB history (1 turns) — checkpoint had 0.
+🧠 Memory: 2 message(s) in context (mode=auto→db, window=10).
+🤔 [Thought→Action 1] create_ticket {'title': 'VPN drops on Windows 11', 'description': 'KB steps tried', 'priority': 'high'}
+✅ [Observation] {"ticket_id": "INC-2098", "status": "Open"}
+🤔 [Thought→Action 2] lookup_asset {'employee_email': 'prithvi@sify.com'}
+✅ [Observation] [{"asset_tag": "SIFY-LAP-3391", "model": "Dell Latitude 5440"}]
+🗣️ [Answer] Done Prithvi — ticket INC-2098 is raised (high). Your laptop is a Dell Latitude 5440.
+🏁 ReAct v2 finished | status=COMPLETED | reason=natural_finish | iterations=2 | tools_called=2
+```
+
+Even though the front-end sent a **brand-new `thread_id`**, the agent still knew the user was Prithvi and what the problem was — that is the durable memory doing its job.
+
+The JSON file also carries a `__how_to_run__` block with the exact requests, the expected loop and the expected variables, so you can diff your real run against it.
+
+---
+
+## 13. Scenario matrix — what to configure for what
 
 | Scenario | Key settings |
 |---|---|
@@ -547,14 +753,18 @@ Five mechanisms, in order of impact:
 | External systems via MCP | `node_type: "MCP Tool"` |
 | Tool must never be misused | declare `parameters` explicitly with `enum` and sharp `description`s |
 | Debugging a wrong tool call | `return_trace: true`, then inspect `{{<out>_trace}}` and `{{<out>_tool_calls}}` |
+| Must know if the answer is complete | branch on `{{execution_status}}` with a Decision Node, or read `status` in the API response |
+| Front-end rotates `thread_id` per message | `memory_mode: "auto"` (or `"db"`) + stable `session_id` + `persist_memory: "true"` |
+| Strict cost ceiling per turn | `max_iterations: 3-4` — each iteration ≈ 1 LLM call + 1 tool call |
 
 ---
 
-## 11. Migration from v1 + troubleshooting
+## 14. Migration from v1 + troubleshooting
 
 ### Migration (2 minutes)
 
-1. Change the node name in your flow JSON: `"Autonomous ReAct Agent"` → `"Autonomous ReAct Agent v2"`.
+1. Change the node name in your flow JSON: `"Autonomous ReAct Agent"` → `"Autonomous ReAct Agent v2"`
+   (or just import `examples/react_agent_v2_llama3_flow.json` and edit it).
 2. Keep `model`, `user_query`, `system_prompt`, `memory_window`, `tools` exactly as they are — all v1 keys are supported.
 3. Optionally add `memory_mode`, `max_iterations`, `return_trace`, and `parameters` on the tools you care most about.
 4. Nothing else changes: same `outputParameters`, same state, same checkpointer.
@@ -571,6 +781,9 @@ Five mechanisms, in order of impact:
 | `Tool 'x' skipped — unknown node_type` | typo in `node_type` | must exactly match a `NodeRegistry.register(...)` name |
 | MCP tool missing | server not connected at startup | check `mcpServers.json` and the startup logs |
 | Answer is the `fallback_answer` | loop hit `max_iterations` or model returned nothing | raise `max_iterations`, simplify the toolset, check the trace |
+| Status is `INCOMPLETE` | budget or loop guard stopped the agent | check `{{<out>_iterations}}` and the `🛑` log line; raise `max_iterations` or sharpen the tool descriptions |
+| Status is `FAILED` | model init or provider error | check the `❌` log line; verify credentials / model name |
+| Memory not persisted | `session_id` missing in the request, or Mongo unreachable | always send `session_id`; look for `Memory: could not persist turn` |
 | Tool result looks cut off | 4 000-char truncation | make the tool return less (e.g. lower KB `limit`) |
 
 ### Log cheat-sheet

@@ -1,0 +1,264 @@
+{
+  "agent_id": "react_v2_showcase_llama3",
+  "name": "ReAct Agent v2 Showcase (Llama 3)",
+  "description": "One complete flow that exercises everything the Autonomous ReAct Agent v2 can do: multi-tool reasoning (KB + REST GET + REST POST + Web Search + MongoDB + MCP), durable session memory, typed tool arguments, auto-inferred arguments, iteration budget, and honest COMPLETED / INCOMPLETE / FAILED status reporting.",
+  "type": "flow",
+  "status": "active",
+  "version": "2.0.0",
+  "inputs": [
+    { "key": "HELPDESK_TOKEN", "value": "replace-with-your-token", "scope": "local", "type": "text" },
+    { "key": "HELPDESK_BASE",  "value": "https://helpdesk.internal/api", "scope": "local", "type": "text" },
+    { "key": "user_email",     "value": "prithvi@sify.com", "scope": "local", "type": "text" },
+    { "key": "user_name",      "value": "", "scope": "local", "type": "text" },
+    { "key": "CHAT_QUERY",     "value": "", "scope": "local", "type": "text" },
+    { "key": "MONGO_URI",      "value": "mongodb://localhost:27017", "scope": "local", "type": "text" }
+  ],
+
+  "graphSpec": {
+    "nodes": [
+      {
+        "node_id": "node-1",
+        "type": "start",
+        "name": "Start Node",
+        "displayName": "Start",
+        "inputParameters": [],
+        "outputParameters": []
+      },
+
+      {
+        "node_id": "node-2",
+        "type": "react_agent_v2",
+        "name": "Autonomous ReAct Agent v2",
+        "displayName": "IT Support Brain (Llama 3)",
+        "inputParameters": [
+          { "key": "model",           "value": "llama3" },
+          { "key": "user_query",      "value": "{{CHAT_QUERY}}" },
+          { "key": "memory_window",   "value": "10" },
+          { "key": "memory_mode",     "value": "auto" },
+          { "key": "persist_memory",  "value": "true" },
+          { "key": "memory_context",  "value": "Requester email: {{user_email}}" },
+          { "key": "max_iterations",  "value": "8" },
+          { "key": "temperature",     "value": "0" },
+          { "key": "response_format", "value": "html" },
+          { "key": "return_trace",    "value": "true" },
+          { "key": "fallback_answer", "value": "I could not finish that request. Please rephrase it or give me the ticket id." },
+
+          { "key": "system_prompt",
+            "value": "You are Sify's IT Support Agent. Be concise, friendly and factual.\n\nPolicy:\n- Greet the user by name whenever you know it from the conversation or the known facts.\n- 'How do I / what is / error message' questions -> search_knowledge_base first.\n- Anything with a ticket id (INC-xxxx) -> get_ticket_status.\n- If the user asks to raise/log/create a ticket -> create_ticket, then confirm the returned ticket id.\n- Only use web_search when the knowledge base has nothing and the question is about a public product or vendor.\n- lookup_asset gives the user's laptop/desktop details from the CMDB collection.\n- Never invent ticket ids, asset tags or statuses. If a tool returns TOOL_ERROR, fix the arguments and retry once, then answer with what you have." },
+
+          { "key": "tools", "value": [
+
+            {
+              "name": "Search Knowledge Base",
+              "description": "Search the internal IT knowledge base for how-tos, known errors and fixes. Use this FIRST for any troubleshooting or how-to question.",
+              "node_type": "Knowledge Retrieval Node",
+              "config": {
+                "knowledge_base_name": "it-kb",
+                "user_prompt": "{{search_query}}",
+                "limit": "5",
+                "max_distance": "0.7"
+              },
+              "parameters": [
+                { "name": "search_query", "type": "string", "required": true,
+                  "description": "What to look for, in plain words.",
+                  "example": "VPN disconnects every few minutes on Windows 11" }
+              ]
+            },
+
+            {
+              "name": "Get Ticket Status",
+              "description": "Fetch the live status, owner and last update of an existing helpdesk ticket using its id.",
+              "node_type": "API caller",
+              "config": {
+                "url": "{{HELPDESK_BASE}}/tickets/{{ticket_id}}",
+                "method": "GET",
+                "headers": { "Authorization": "Bearer {{HELPDESK_TOKEN}}", "Accept": "application/json" },
+                "timeout": "15"
+              },
+              "parameters": [
+                { "name": "ticket_id", "type": "string", "required": true,
+                  "description": "Helpdesk ticket id in the form INC-1234.", "example": "INC-1042" }
+              ]
+            },
+
+            {
+              "name": "Create Ticket",
+              "description": "Create a new helpdesk ticket for the user. Use only when the user explicitly asks to raise/log/open a ticket.",
+              "node_type": "API caller",
+              "config": {
+                "url": "{{HELPDESK_BASE}}/tickets",
+                "method": "POST",
+                "headers": { "Authorization": "Bearer {{HELPDESK_TOKEN}}", "Content-Type": "application/json" },
+                "data": {
+                  "title": "{{title}}",
+                  "description": "{{description}}",
+                  "priority": "{{priority}}",
+                  "requester": "{{user_email}}"
+                },
+                "timeout": "20"
+              },
+              "parameters": [
+                { "name": "title", "type": "string", "required": true,
+                  "description": "Short one-line summary of the problem." },
+                { "name": "description", "type": "string", "required": true,
+                  "description": "Full description including what the user already tried." },
+                { "name": "priority", "type": "string", "required": false, "enum": ["low", "medium", "high"],
+                  "description": "Business impact. Default to medium if the user does not say." }
+              ]
+            },
+
+            {
+              "name": "Lookup Asset",
+              "description": "Look up the hardware assigned to an employee (laptop model, asset tag, warranty end) from the CMDB.",
+              "node_type": "Mongo DB caller",
+              "config": {
+                "mongoUri": "{{MONGO_URI}}",
+                "dbName": "agent_studio",
+                "collectionName": "cmdb_assets",
+                "task": "fetch",
+                "conditions": { "assigned_to": "{{employee_email}}" }
+              },
+              "parameters": [
+                { "name": "employee_email", "type": "string", "required": true,
+                  "description": "Email of the employee whose asset you need. Use the requester email unless the user names someone else." }
+              ]
+            },
+
+            {
+              "name": "Web Search",
+              "description": "Search the public internet. Use ONLY when the knowledge base has no answer and the question is about a public vendor, product or error code.",
+              "node_type": "Web Search",
+              "config": { "search_query": "{{query}}", "search_count": "3" },
+              "parameters": [
+                { "name": "query", "type": "string", "required": true, "description": "Public search query." }
+              ]
+            },
+
+            {
+              "name": "Jira Search",
+              "description": "Search engineering Jira issues through the connected MCP server. Use for questions about ongoing engineering work or known product bugs.",
+              "node_type": "MCP Tool",
+              "config": { "server_id": "atlassian", "tool_name": "jira_search" }
+            }
+
+          ]}
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "agent_response" }
+        ]
+      },
+
+      {
+        "node_id": "node-3",
+        "type": "conditions",
+        "name": "Decision Node",
+        "displayName": "Did the agent finish fully?",
+        "inputParameters": [
+          { "key": "inputValue", "value": "{{execution_status}}" },
+          { "key": "conditions", "value": [
+            { "operator": "equal_to",   "comparisonValue": "COMPLETED", "nextNode": "node-4" },
+            { "operator": "not_equals", "comparisonValue": "COMPLETED", "nextNode": "node-5" }
+          ]}
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "routing_decision" }
+        ]
+      },
+
+      {
+        "node_id": "node-4",
+        "type": "output",
+        "name": "End Node",
+        "displayName": "End — fully answered",
+        "inputParameters": [
+          { "key": "final_input", "value": "{{agent_response}}" }
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "final_output" }
+        ]
+      },
+
+      {
+        "node_id": "node-5",
+        "type": "output",
+        "name": "End Node",
+        "displayName": "End — partial answer",
+        "inputParameters": [
+          { "key": "final_input",
+            "value": "{{agent_response}}<br><br><i>Note: I could not fully complete this request ({{agent_response_status}}) after {{agent_response_iterations}} reasoning steps. A human agent will follow up.</i>" }
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "final_output" }
+        ]
+      }
+    ],
+
+    "edges": [
+      { "from": "node-1", "to": "node-2" },
+      { "from": "node-2", "to": "node-3" }
+    ]
+  },
+
+  "__how_to_run__": {
+    "endpoint": "POST /engine/agents/invoke/react_v2_showcase_llama3",
+    "turn_1_request": {
+      "agent_id": "react_v2_showcase_llama3",
+      "user_id": "u-9",
+      "session_id": "sess-77",
+      "thread_id": "thread-77",
+      "userInput": { "message": "Hi, I'm Prithvi. My VPN keeps dropping on Windows 11 - any fix?" }
+    },
+    "turn_1_expected_response": {
+      "agent_response": "Hi <b>Prithvi</b>! Try these in order:<ul><li>Update the VPN client…</li><li>Disable IPv6 on the adapter…</li><li>Switch the tunnel to TCP…</li></ul>",
+      "status": "COMPLETED",
+      "response_type": "GENERIC",
+      "session_id": "sess-77",
+      "thread_id": "thread-77"
+    },
+    "turn_2_request": {
+      "agent_id": "react_v2_showcase_llama3",
+      "user_id": "u-9",
+      "session_id": "sess-77",
+      "thread_id": "thread-77",
+      "userInput": { "message": "That didn't work. Raise a high priority ticket and tell me my laptop model." }
+    },
+    "turn_2_expected_internal_loop": [
+      "Memory: 2 messages restored -> the agent already knows the user is Prithvi and the issue is VPN drops",
+      "Thought -> Action: create_ticket(title='VPN drops on Windows 11', description='KB steps tried, still dropping', priority='high')",
+      "Observation: {\"ticket_id\":\"INC-2098\",\"status\":\"Open\"}",
+      "Thought -> Action: lookup_asset(employee_email='prithvi@sify.com')",
+      "Observation: [{\"asset_tag\":\"SIFY-LAP-3391\",\"model\":\"Dell Latitude 5440\"}]",
+      "Answer: 'Done Prithvi - ticket INC-2098 raised (high). Your laptop is a Dell Latitude 5440 (SIFY-LAP-3391).'"
+    ],
+    "turn_2_expected_response": {
+      "agent_response": "Done <b>Prithvi</b> — ticket <b>INC-2098</b> is raised with high priority. Your laptop is a <b>Dell Latitude 5440</b> (asset SIFY-LAP-3391).",
+      "status": "COMPLETED"
+    },
+    "partial_run_response": {
+      "agent_response": "I found the ticket but the CMDB did not respond.<br><br><i>Note: I could not fully complete this request (INCOMPLETE) after 8 reasoning steps. A human agent will follow up.</i>",
+      "status": "INCOMPLETE"
+    },
+    "variables_produced_by_node_2": {
+      "agent_response": "final answer text",
+      "agent_response_status": "COMPLETED | INCOMPLETE | FAILED",
+      "agent_response_iterations": 2,
+      "agent_response_tool_calls": [
+        { "tool": "create_ticket", "args": { "title": "VPN drops on Windows 11", "priority": "high" } },
+        { "tool": "lookup_asset", "args": { "employee_email": "prithvi@sify.com" } }
+      ],
+      "agent_response_trace": [
+        { "tool": "create_ticket", "args": { "title": "VPN drops on Windows 11", "priority": "high" },
+          "observation": "{\"ticket_id\": \"INC-2098\", \"status\": \"Open\"}" }
+      ],
+      "execution_status": "COMPLETED",
+      "_agent_status_node-2": "COMPLETED"
+    },
+    "notes": [
+      "model 'llama3' is routed by _get_llm() to meta/llama-3.3-70b-instruct on the OPENAI_BASE_URL endpoint.",
+      "HELPDESK_TOKEN, HELPDESK_BASE and user_email live in flow inputs, so the LLM never sees or invents them - the engine fills those placeholders.",
+      "Jira Search has no 'parameters' block on purpose: MCP tools bring their own schema from the connected server. If the server is offline the tool is skipped and the flow still answers.",
+      "Keep session_id stable across turns; thread_id can change - memory_mode 'auto' recovers history from MongoDB.",
+      "Remove nodes 3 and 5 (and edge node-2 -> node-3) if you want the simplest possible Start -> ReAct v2 -> End flow."
+    ]
+  }
+}

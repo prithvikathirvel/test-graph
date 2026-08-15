@@ -105,6 +105,39 @@ async def get_and_compile_graph(agent_id: str, request: Request):
     return graph, schema
 
 
+# ── Completion status derivation ──────────────────────────────────────────────
+# Nodes that can finish "partially" (e.g. Autonomous ReAct Agent v2) publish a
+# per-node signal into state variables:  "_agent_status_<node_id>": COMPLETED |
+# INCOMPLETE | FAILED. The API layer reports COMPLETED **only** when the graph
+# reached its end AND no node reported a partial/failed execution.
+_AGENT_STATUS_PREFIX = "_agent_status_"
+_STATUS_PRIORITY = {"FAILED": 3, "INCOMPLETE": 2, "COMPLETED": 1}
+
+
+def derive_completion_status(result_state: dict, default: str = "COMPLETED") -> str:
+    """
+    Returns 'COMPLETED' only if every status-reporting node completed fully.
+    Otherwise returns the worst status reported ('FAILED' > 'INCOMPLETE').
+    Unknown / missing signals never downgrade the status (backward compatible).
+    """
+    try:
+        variables = (result_state or {}).get("variables", {}) or {}
+    except AttributeError:
+        return default
+
+    worst = default
+    for key, value in variables.items():
+        if not key.startswith(_AGENT_STATUS_PREFIX):
+            continue
+        value = str(value).upper()
+        if _STATUS_PRIORITY.get(value, 0) > _STATUS_PRIORITY.get(worst, 0):
+            worst = value
+
+    if worst != default:
+        logger.warning(f"⚠️ Flow ended with a non-final agent status: {worst}")
+    return worst
+
+
 async def format_exact_response(status, result_state, req, request, interrupt_data=None, final_user_message=None):
     agent_response = ""
     payload        = None
@@ -118,7 +151,7 @@ async def format_exact_response(status, result_state, req, request, interrupt_da
         agent_response = interrupt_data.get("question", interrupt_data.get("message", "Input required"))
         payload        = interrupt_data
         response_type  = "QUESTION"
-    elif status == "COMPLETED":
+    elif status in ("COMPLETED", "INCOMPLETE", "FAILED"):
         agent_response = result_state.get("variables", {}).get("final_output", "Flow Completed.")
 
     if user_msg or agent_response:

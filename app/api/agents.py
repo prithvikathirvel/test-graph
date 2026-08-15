@@ -15,6 +15,7 @@ from app.core.helpers import (
     get_and_compile_graph,
     format_exact_response,
     resolve_inputs,
+    derive_completion_status,
 )
 from app.core.token_tracker import start_tracking, get_tracker, price_from_summary
 from app.engine.registry import NodeRegistry
@@ -162,8 +163,14 @@ async def invoke(agent_id: str, req: InvokeReq, request: Request):
             resp["price_usage"] = price_usage
             return resp
 
-        logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully.")
-        resp = await format_exact_response("COMPLETED", result, req, request)
+        # COMPLETED is reported ONLY when the graph ended AND every agent node
+        # finished its work fully (see derive_completion_status).
+        final_status = derive_completion_status(result)
+        if final_status == "COMPLETED":
+            logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully.")
+        else:
+            logger.warning(f"⚠️ Flow '{agent_id}' ended with status {final_status}.")
+        resp = await format_exact_response(final_status, result, req, request)
         resp["token_usage"] = token_summary
         resp["price_usage"] = price_usage
         return resp
@@ -218,8 +225,12 @@ async def resume(agent_id: str, req: ResumeReq, request: Request):
             resp["price_usage"] = price_usage
             return resp
 
-        logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully after resumption.")
-        resp = await format_exact_response("COMPLETED", result, req, request, final_user_message=user_response)
+        final_status = derive_completion_status(result)
+        if final_status == "COMPLETED":
+            logger.info(f"✅ Flow '{agent_id}' COMPLETED successfully after resumption.")
+        else:
+            logger.warning(f"⚠️ Flow '{agent_id}' ended with status {final_status} after resumption.")
+        resp = await format_exact_response(final_status, result, req, request, final_user_message=user_response)
         resp["token_usage"] = token_summary
         resp["price_usage"] = price_usage
         return resp
