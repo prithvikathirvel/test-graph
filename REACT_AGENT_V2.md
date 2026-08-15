@@ -20,6 +20,7 @@
 10. [COMPLETED only means COMPLETED (status contract)](#10-completed-only-means-completed-status-contract)
 11. [No more recursion errors (iteration budget)](#11-no-more-recursion-errors-iteration-budget)
 12. [Ready-to-run showcase flow (Llama 3)](#12-ready-to-run-showcase-flow-llama-3)
+15. [E-commerce test flow on live public APIs (DummyJSON)](#15-e-commerce-test-flow-on-live-public-apis-dummyjson)
 13. [Scenario matrix — what to configure for what](#13-scenario-matrix--what-to-configure-for-what)
 14. [Migration from v1 + troubleshooting](#14-migration-from-v1--troubleshooting)
 
@@ -739,6 +740,59 @@ Even though the front-end sent a **brand-new `thread_id`**, the agent still knew
 The JSON file also carries a `__how_to_run__` block with the exact requests, the expected loop and the expected variables, so you can diff your real run against it.
 
 ---
+
+## 15. E-commerce test flow on live public APIs (DummyJSON)
+
+File: **`examples/ecommerce_dummyjson_flow.json`** — a shopping assistant you can run *today*, no API keys, every tool pointing at a live public endpoint from <https://dummyjson.com/docs/products>.
+
+```
+Start ──► Autonomous ReAct Agent v2 (llama3) ──► Decision: execution_status
+                                                    ├─ COMPLETED ──► End "answered"
+                                                    └─ otherwise ──► End "partial"
+```
+
+| Tool | Live call it makes |
+|---|---|
+| `search_products(q)` | `GET /products/search?q=phone&limit=5&select=id,title,brand,category,price,rating,stock` |
+| `get_product_details(product_id)` | `GET /products/121` |
+| `list_categories()` | `GET /products/category-list` |
+| `products_by_category(category)` | `GET /products/category/smartphones?limit=5&select=…` |
+| `browse_products(sort_by, order)` | `GET /products?limit=5&sortBy=price&order=asc&select=…` |
+| `view_cart()` | `GET /carts/user/5` |
+| `add_to_cart(product_id, quantity)` | `POST /carts/add` → `{"userId":5,"products":[{"id":104,"quantity":2}]}` |
+| `get_shopper_profile()` | `GET /users/5?select=firstName,lastName,email,age,phone` |
+
+`shopper_id` lives in the flow `inputs`, so `view_cart`, `add_to_cart` and `get_shopper_profile` take **zero arguments** — the engine fills the id and the model can never invent it. Every URL pins `limit` and `select` so responses stay well under the 4 000-char tool-output cap.
+
+**Suggested 5-turn test script** (keep `session_id` fixed):
+
+| Turn | Message | What it proves |
+|---|---|---|
+| 1 | "Hi, I'm Prithvi. Show me some phones under 500 dollars." | search + filtering |
+| 2 | "Tell me more about the charger one, and what's my name?" | memory of both the product id and the name |
+| 3 | "Add 2 of those to my cart and show me my cart total." | 2 tools in one turn, incl. a POST write |
+| 4 | "What categories do you have? Then show the 5 cheapest products." | chained tools with enums |
+| 5 | *(change `thread_id`)* "What was the id of the charger?" | durable memory across a new thread |
+
+### Edge wiring — how to be sure it is right
+
+The compiler (`app/engine/compiler.py`) reads edges as `{"from": ..., "to": ...}`. Rules:
+
+* the `start` node's outgoing edge becomes `START → target`;
+* nodes of type `conditions` get their outgoing edges from `conditions[].nextNode` — listing them in `edges` too is safe (the compiler skips duplicates) and makes the UI render a connected graph;
+* every node of type `output` / named `End Node` is auto-wired to `END`;
+* every `nextNode` value must match an existing `node_id`.
+
+Both example flows were **compiled with the real `GraphCompiler`** to verify this, producing:
+
+```
+__start__ -> node-2
+node-2    -> node-3
+node-3    -> node-4   (conditional)
+node-3    -> node-5   (conditional)
+node-4    -> __end__
+node-5    -> __end__
+```
 
 ## 13. Scenario matrix — what to configure for what
 

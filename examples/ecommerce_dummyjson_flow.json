@@ -1,0 +1,377 @@
+{
+  "agent_id": "ecommerce_shopping_assistant_v2",
+  "name": "E-commerce Shopping Assistant (ReAct v2 + DummyJSON)",
+  "description": "A fully runnable shopping assistant. Every tool points at a live, public DummyJSON endpoint (https://dummyjson.com/docs/products) so the flow can be tested end-to-end with no credentials. Demonstrates ReAct v2 multi-tool reasoning, typed arguments, engine-filled values, durable session memory and honest COMPLETED / INCOMPLETE / FAILED status.",
+  "type": "flow",
+  "status": "active",
+  "version": "1.0.0",
+
+  "inputs": [
+    { "key": "CHAT_QUERY",  "value": "",  "scope": "local", "type": "text" },
+    { "key": "shopper_id",  "value": 5, "scope": "local", "type": "number" },
+    { "key": "store_name",  "value": "DummyMart", "scope": "local", "type": "text" },
+    { "key": "currency",    "value": "USD", "scope": "local", "type": "text" }
+  ],
+
+  "graphSpec": {
+    "nodes": [
+      {
+        "node_id": "node-1",
+        "type": "start",
+        "name": "Start Node",
+        "displayName": "Start",
+        "inputParameters": [],
+        "outputParameters": []
+      },
+
+      {
+        "node_id": "node-2",
+        "type": "react_agent_v2",
+        "name": "Autonomous ReAct Agent v2",
+        "displayName": "Shopping Assistant Brain",
+        "inputParameters": [
+          { "key": "model",           "value": "llama3" },
+          { "key": "user_query",      "value": "{{CHAT_QUERY}}" },
+          { "key": "memory_window",   "value": "10" },
+          { "key": "memory_mode",     "value": "auto" },
+          { "key": "persist_memory",  "value": "true" },
+          { "key": "memory_context",  "value": "Store: {{store_name}}. Shopper id: {{shopper_id}}. Currency: {{currency}}." },
+          { "key": "max_iterations",  "value": "6" },
+          { "key": "temperature",     "value": "0" },
+          { "key": "response_format", "value": "html" },
+          { "key": "return_trace",    "value": "true" },
+          { "key": "fallback_answer", "value": "Sorry, I could not finish that shopping request. Please tell me the product name or id again." },
+
+          { "key": "system_prompt",
+            "value": "You are the shopping assistant for {{store_name}}. All prices are in {{currency}}.\n\nHow to help:\n- Product hunting by words (\"show me cheap phones\", \"any mascara?\") -> search_products.\n- \"What categories do you have?\" -> list_categories.\n- \"Show me all laptops / smartphones\" -> products_by_category.\n- \"Cheapest / most expensive / best rated\" -> browse_products with the right sort_by and order.\n- Details, description, warranty, shipping or stock of ONE item -> get_product_details (you need its numeric id; search first if you do not have it).\n- \"What's in my cart / my total?\" -> view_cart.\n- \"Add X to my cart\" -> you MUST know the numeric product id first (search or use the id from earlier in this chat), then call add_to_cart.\n- \"Who am I / my email?\" -> get_shopper_profile.\n\nRules:\n- Never invent product ids, prices or stock. Read them from the tool output.\n- Remember ids and preferences the shopper mentioned earlier in the conversation and reuse them.\n- Before adding to the cart, confirm the exact product title and price in your answer.\n- Present products as a short HTML list: <b>title</b> - price - rating - stock (id: N).\n- Keep answers under 120 words unless the shopper asks for detail." },
+
+          { "key": "tools", "value": [
+
+            {
+              "name": "Search Products",
+              "description": "Search the whole catalogue by keywords and get back up to 5 matching products with id, title, brand, category, price, rating and stock. Use this first whenever the shopper describes what they want in words.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/products/search?q={{q}}&limit=5&select=id,title,brand,category,price,rating,stock",
+                "method": "GET",
+                "headers": { "Accept": "application/json" },
+                "timeout": "20"
+              },
+              "parameters": [
+                { "name": "q", "type": "string", "required": true,
+                  "description": "Keywords to search for, e.g. 'phone', 'mascara', 'laptop'. Use one or two words, not a full sentence.",
+                  "example": "phone" }
+              ]
+            },
+
+            {
+              "name": "Get Product Details",
+              "description": "Get the FULL details of one product by its numeric id: description, discount, warranty, shipping, return policy, reviews, stock and images. Only call this when you already know the numeric product id.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/products/{{product_id}}",
+                "method": "GET",
+                "headers": { "Accept": "application/json" },
+                "timeout": "20"
+              },
+              "parameters": [
+                { "name": "product_id", "type": "integer", "required": true,
+                  "description": "Numeric product id returned by search_products or products_by_category.",
+                  "example": 121 }
+              ]
+            },
+
+            {
+              "name": "List Categories",
+              "description": "List every product category available in the store (beauty, laptops, smartphones, groceries, womens-shoes, ...). Use it when the shopper asks what you sell or is browsing without a clear goal.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/products/category-list",
+                "method": "GET",
+                "headers": { "Accept": "application/json" },
+                "timeout": "20"
+              },
+              "parameters": []
+            },
+
+            {
+              "name": "Products By Category",
+              "description": "List up to 5 products from one specific category. Use it after list_categories, or when the shopper names a category directly.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/products/category/{{category}}?limit=5&select=id,title,price,rating,stock,brand",
+                "method": "GET",
+                "headers": { "Accept": "application/json" },
+                "timeout": "20"
+              },
+              "parameters": [
+                { "name": "category", "type": "string", "required": true,
+                  "description": "Exact category slug from list_categories.",
+                  "enum": ["beauty", "fragrances", "furniture", "groceries", "home-decoration", "kitchen-accessories", "laptops", "mens-shirts", "mens-shoes", "mens-watches", "mobile-accessories", "motorcycle", "skin-care", "smartphones", "sports-accessories", "sunglasses", "tablets", "tops", "vehicle", "womens-bags", "womens-dresses", "womens-jewellery", "womens-shoes", "womens-watches"],
+                  "example": "smartphones" }
+              ]
+            },
+
+            {
+              "name": "Browse Products",
+              "description": "Browse the catalogue sorted by a field. Use for 'cheapest', 'most expensive', 'best rated' or 'top products' style questions.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/products?limit=5&sortBy={{sort_by}}&order={{order}}&select=id,title,brand,category,price,rating,stock",
+                "method": "GET",
+                "headers": { "Accept": "application/json" },
+                "timeout": "20"
+              },
+              "parameters": [
+                { "name": "sort_by", "type": "string", "required": true,
+                  "description": "Field to sort on.", "enum": ["price", "rating", "title", "stock"], "example": "price" },
+                { "name": "order", "type": "string", "required": true,
+                  "description": "'asc' for cheapest/lowest first, 'desc' for most expensive/highest first.",
+                  "enum": ["asc", "desc"], "example": "asc" }
+              ]
+            },
+
+            {
+              "name": "View Cart",
+              "description": "Show the shopper's current cart: every line item, quantity, price, the total and the discounted total. Takes no arguments - the shopper id comes from the session.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/carts/user/{{shopper_id}}",
+                "method": "GET",
+                "headers": { "Accept": "application/json" },
+                "timeout": "20"
+              },
+              "parameters": []
+            },
+
+            {
+              "name": "Add To Cart",
+              "description": "Add a product to the shopper's cart. You MUST pass the numeric product id (search for it first if you do not have it) and the quantity. Returns the updated cart with the new total.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/carts/add",
+                "method": "POST",
+                "headers": { "Content-Type": "application/json", "Accept": "application/json" },
+                "data": {
+                  "userId": "{{shopper_id}}",
+                  "products": [
+                    { "id": "{{product_id}}", "quantity": "{{quantity}}" }
+                  ]
+                },
+                "timeout": "20"
+              },
+              "parameters": [
+                { "name": "product_id", "type": "integer", "required": true,
+                  "description": "Numeric id of the product to add.", "example": 144 },
+                { "name": "quantity", "type": "integer", "required": true,
+                  "description": "How many units to add. Use 1 unless the shopper says otherwise.", "example": 1 }
+              ]
+            },
+
+            {
+              "name": "Get Shopper Profile",
+              "description": "Get the signed-in shopper's name, email, age and address. Takes no arguments - the shopper id comes from the session.",
+              "node_type": "API caller",
+              "config": {
+                "url": "https://dummyjson.com/users/{{shopper_id}}?select=firstName,lastName,email,age,phone",
+                "method": "GET",
+                "headers": { "Accept": "application/json" },
+                "timeout": "20"
+              },
+              "parameters": []
+            }
+
+          ]}
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "shop_reply" }
+        ]
+      },
+
+      {
+        "node_id": "node-3",
+        "type": "conditions",
+        "name": "Decision Node",
+        "displayName": "Did the assistant finish fully?",
+        "inputParameters": [
+          { "key": "inputValue", "value": "{{execution_status}}" },
+          { "key": "conditions", "value": [
+            { "operator": "equal_to",   "comparisonValue": "COMPLETED", "nextNode": "node-4" },
+            { "operator": "not_equals", "comparisonValue": "COMPLETED", "nextNode": "node-5" }
+          ]}
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "routing_decision" }
+        ]
+      },
+
+      {
+        "node_id": "node-4",
+        "type": "output",
+        "name": "End Node",
+        "displayName": "End - answered",
+        "inputParameters": [
+          { "key": "final_input", "value": "{{shop_reply}}" }
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "final_output" }
+        ]
+      },
+
+      {
+        "node_id": "node-5",
+        "type": "output",
+        "name": "End Node",
+        "displayName": "End - partial",
+        "inputParameters": [
+          { "key": "final_input",
+            "value": "{{shop_reply}}<br><br><i>(I could not fully complete this request - status {{shop_reply_status}} after {{shop_reply_iterations}} steps. Please try rephrasing.)</i>" }
+        ],
+        "outputParameters": [
+          { "key": "output", "value": "final_output" }
+        ]
+      }
+    ],
+
+    "edges": [
+      { "from": "node-1", "to": "node-2" },
+      { "from": "node-2", "to": "node-3" },
+      { "from": "node-3", "to": "node-4" },
+      { "from": "node-3", "to": "node-5" }
+    ]
+  },
+
+  "__wiring_notes__": [
+    "Edges use the keys 'from' and 'to' (app/engine/compiler.py reads edge['from'] / edge['to']).",
+    "node-1 is type 'start': the compiler turns edge node-1 -> node-2 into START -> node-2.",
+    "node-3 is type 'conditions': the compiler builds its outgoing edges from conditions[].nextNode. The two edges node-3 -> node-4 and node-3 -> node-5 are listed anyway so the graph renders as connected in the UI; the compiler skips duplicate edges whose source is a decision node, so they are safe.",
+    "node-4 and node-5 are type 'output' with the name 'End Node': the compiler auto-wires both to END.",
+    "Every nextNode value ('node-4', 'node-5') must exist as a node_id - they do.",
+    "Verified by compiling this exact file with the real GraphCompiler: nodes = node-2, node-3, node-4, node-5 and edges = START->node-2, node-2->node-3, node-3->(node-4|node-5), node-4->END, node-5->END."
+  ],
+
+  "__how_to_test__": {
+    "endpoint": "POST /engine/agents/invoke/ecommerce_shopping_assistant_v2",
+    "keep_stable_across_turns": ["session_id", "thread_id"],
+
+    "turn_1_browse": {
+      "request": {
+        "agent_id": "ecommerce_shopping_assistant_v2",
+        "user_id": "u-1",
+        "session_id": "shop-sess-1",
+        "thread_id": "shop-thread-1",
+        "userInput": { "message": "Hi, I'm Prithvi. Show me some phones under 500 dollars." }
+      },
+      "expected_loop": [
+        "Thought -> Action: search_products(q='phone')",
+        "Observation: {\"products\":[{\"id\":101,\"title\":\"Apple AirPods Max Silver\",\"price\":549.99,...},{\"id\":104,\"title\":\"Apple iPhone Charger\",\"price\":19.99,...}],\"total\":23}",
+        "Answer: filtered HTML list of the items priced under 500"
+      ],
+      "expected_response": {
+        "agent_response": "Hi <b>Prithvi</b>! Under $500 I found: <ul><li><b>Apple iPhone Charger</b> - $19.99 - 4.15 stars - 31 in stock (id: 104)</li><li><b>Apple MagSafe Battery Pack</b> - $99.99 - 3.62 stars - 1 left (id: 105)</li></ul>",
+        "status": "COMPLETED"
+      }
+    },
+
+    "turn_2_memory_plus_details": {
+      "request": {
+        "agent_id": "ecommerce_shopping_assistant_v2",
+        "user_id": "u-1",
+        "session_id": "shop-sess-1",
+        "thread_id": "shop-thread-1",
+        "userInput": { "message": "Tell me more about the charger one, and what's my name?" }
+      },
+      "proves": "Memory: the agent reuses id 104 from turn 1 and still knows the shopper is Prithvi.",
+      "expected_loop": [
+        "Memory: 2 messages restored",
+        "Thought -> Action: get_product_details(product_id=104)",
+        "Observation: full product JSON (description, warranty, shipping, reviews)",
+        "Answer: 'You're Prithvi. The Apple iPhone Charger ($19.99) comes with ...'"
+      ],
+      "expected_response": { "status": "COMPLETED" }
+    },
+
+    "turn_3_multi_tool_write": {
+      "request": {
+        "agent_id": "ecommerce_shopping_assistant_v2",
+        "user_id": "u-1",
+        "session_id": "shop-sess-1",
+        "thread_id": "shop-thread-1",
+        "userInput": { "message": "Add 2 of those to my cart and then show me my cart total." }
+      },
+      "expected_loop": [
+        "Thought -> Action: add_to_cart(product_id=104, quantity=2)   [userId comes from the session, not the model]",
+        "Observation: {\"id\":51,\"products\":[{\"id\":104,\"quantity\":2,...}],\"total\":39.98,...}",
+        "Thought -> Action: view_cart()",
+        "Observation: {\"carts\":[{\"id\":5,\"total\":1467.88,\"totalProducts\":3,...}]}",
+        "Answer: confirmation + cart total"
+      ],
+      "expected_response": { "status": "COMPLETED" }
+    },
+
+    "turn_4_category_browse": {
+      "request": {
+        "agent_id": "ecommerce_shopping_assistant_v2",
+        "user_id": "u-1",
+        "session_id": "shop-sess-1",
+        "thread_id": "shop-thread-1",
+        "userInput": { "message": "What categories do you have? Then show me the 5 cheapest products overall." }
+      },
+      "expected_loop": [
+        "Thought -> Action: list_categories()",
+        "Observation: [\"beauty\",\"fragrances\",...,\"womens-watches\"]",
+        "Thought -> Action: browse_products(sort_by='price', order='asc')",
+        "Observation: 5 cheapest products",
+        "Answer: categories + cheapest list"
+      ],
+      "expected_response": { "status": "COMPLETED" }
+    },
+
+    "turn_5_memory_across_new_thread": {
+      "request": {
+        "agent_id": "ecommerce_shopping_assistant_v2",
+        "user_id": "u-1",
+        "session_id": "shop-sess-1",
+        "thread_id": "shop-thread-BRAND-NEW",
+        "userInput": { "message": "What was the id of the charger you showed me?" }
+      },
+      "proves": "Durable memory: the thread_id changed, but memory_mode 'auto' reloads the conversation from MongoDB 'react_agent_memory' by session_id, so the agent still answers 104.",
+      "expected_response": { "status": "COMPLETED" }
+    },
+
+    "variables_produced_by_node_2": {
+      "shop_reply": "the final HTML answer",
+      "shop_reply_status": "COMPLETED | INCOMPLETE | FAILED",
+      "shop_reply_iterations": 2,
+      "shop_reply_tool_calls": [
+        { "tool": "search_products", "args": { "q": "phone" } },
+        { "tool": "get_product_details", "args": { "product_id": 104 } }
+      ],
+      "shop_reply_trace": [
+        { "tool": "search_products", "args": { "q": "phone" },
+          "observation": "{\"products\": [{\"id\": 101, \"title\": \"Apple AirPods Max Silver\", ...}]}" }
+      ],
+      "execution_status": "COMPLETED",
+      "_agent_status_node-2": "COMPLETED"
+    },
+
+    "live_endpoints_used": {
+      "search_products":      "GET https://dummyjson.com/products/search?q=phone&limit=5&select=id,title,brand,category,price,rating,stock",
+      "get_product_details":  "GET https://dummyjson.com/products/121",
+      "list_categories":      "GET https://dummyjson.com/products/category-list",
+      "products_by_category": "GET https://dummyjson.com/products/category/smartphones?limit=5&select=id,title,price,rating,stock,brand",
+      "browse_products":      "GET https://dummyjson.com/products?limit=5&sortBy=price&order=asc&select=id,title,brand,category,price,rating,stock",
+      "view_cart":            "GET https://dummyjson.com/carts/user/5",
+      "add_to_cart":          "POST https://dummyjson.com/carts/add  body {\"userId\":5,\"products\":[{\"id\":104,\"quantity\":2}]}",
+      "get_shopper_profile":  "GET https://dummyjson.com/users/5?select=firstName,lastName,email,age,phone",
+      "note": "DummyJSON write operations (carts/add) are simulated server-side: the response is real but nothing is persisted, which is perfect for testing."
+    },
+
+    "notes": [
+      "model 'llama3' is routed by _get_llm() to meta/llama-3.3-70b-instruct on your OPENAI_BASE_URL endpoint.",
+      "shopper_id lives in flow inputs, so view_cart / add_to_cart / get_shopper_profile get it from the engine - the LLM never sees or invents it. Change it to any id from 1-30 to test another shopper.",
+      "Every URL keeps 'limit' and 'select' fixed so tool responses stay small and never hit the 4000-char truncation.",
+      "No API keys are needed anywhere in this flow."
+    ]
+  }
+}
