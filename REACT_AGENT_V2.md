@@ -795,6 +795,91 @@ node-4    -> __end__
 node-5    -> __end__
 ```
 
+---
+
+## 16. How the tool template adapts to each node type
+
+The template never changes — only `node_type`, the keys inside `config`, and which values you turn into `{{placeholders}}`:
+
+```
+name         → what the tool is called
+description  → when the model should reach for it
+node_type    → which registered node actually runs
+config       → that node's OWN input keys (copy them from app/nodes/*.py)
+parameters   → the subset of config values the MODEL fills; everything else the ENGINE fills
+```
+
+**The one rule that decides everything:** a value the model must choose becomes a `{{placeholder}}` + a declared parameter; a value that is fixed or secret stays a literal or a flow-state variable.
+
+A ready-to-paste library of all of these lives in **`examples/tool_templates.json`** (14 templates, every one verified against the real node executors and the real templating engine).
+
+| `node_type` | `config` keys it reads | Typically LLM-controlled | Typically engine-controlled |
+|---|---|---|---|
+| `API caller` | `url`, `method`, `headers`, `data`, `timeout` | path / query / body values | base URL, tokens, `limit`, `select` |
+| `Knowledge Retrieval Node` | `knowledge_base_name`, `user_prompt`, `limit`, `max_distance` | `user_prompt` | KB name, limit, distance |
+| `Web Search` | `search_query`, `search_count` | `search_query` | `search_count` |
+| `Mongo DB caller` | `mongoUri`, `dbName`, `collectionName`, `task`, `conditions`, `document`, `docId` | filter / document values | URI, db, collection, task |
+| `Chat with DB` | `db_uri`, `user_query`, `model`, `memory_window` | `user_query` | connection string, model |
+| `Send Email` | `from`, `to`, `subject`, `body` | `subject`, `body` | `from`, `to` |
+| `Question Classifier` | `input_text`, `model`, `instructions`, `classifications` | `input_text` | label set, instructions |
+| `Vocabulary Extractor` | `user_query`, `entity_schema` | `user_query` | schema |
+| `Agent Flow Node` | `agent_id`, `input_mapping` | values inside `input_mapping` | `agent_id` |
+| `LLM invoker` | `Model`, `Prompt`, `user_message_key`, `use_memory`, `Response Format` | the variable named by `user_message_key` | model, prompt |
+| `MCP Tool` | `server_id`, `tool_name` | *(remote schema)* | server + tool |
+
+### Four adaptation patterns
+
+**1. Read API — the value goes into the URL**
+
+```json
+{ "name": "Search Products", "description": "Search the catalogue by keywords.",
+  "node_type": "API caller",
+  "config": { "url": "https://dummyjson.com/products/search?q={{q}}&limit=5&select=id,title,price", "method": "GET" },
+  "parameters": [ { "name": "q", "type": "string", "required": true, "description": "One or two keywords." } ] }
+```
+
+→ node receives `url = https://dummyjson.com/products/search?q=phone&limit=5&select=id,title,price`
+
+**2. Write API — values go into a nested JSON body, mixed with session values**
+
+```json
+"config": { "url": "https://dummyjson.com/carts/add", "method": "POST",
+            "data": { "userId": "{{shopper_id}}",
+                      "products": [ { "id": "{{product_id}}", "quantity": "{{quantity}}" } ] } }
+```
+
+→ node receives `{"userId": 5, "products": [{"id": 104, "quantity": 2}]}` — numeric types preserved, `shopper_id` filled by the engine.
+
+**3. Non-HTTP node — same template, different keys**
+
+```json
+{ "name": "Lookup Asset", "node_type": "Mongo DB caller",
+  "config": { "mongoUri": "{{MONGO_URI}}", "dbName": "agent_studio", "collectionName": "cmdb_assets",
+              "task": "fetch", "conditions": { "assigned_to": "{{employee_email}}" } },
+  "parameters": [ { "name": "employee_email", "type": "string", "required": true, "description": "Employee email." } ] }
+```
+
+→ node receives `conditions = {"assigned_to": "prithvi@sify.com"}`, connection details untouched.
+
+**4. Node that reads from state, not from config — bridge with `user_message_key`**
+
+```json
+{ "name": "Summarise Text", "node_type": "LLM invoker",
+  "config": { "Model": "llama3", "Prompt": "Summarise into three bullets.",
+              "user_message_key": "text_to_summarise", "use_memory": "false" },
+  "parameters": [ { "name": "text_to_summarise", "type": "string", "required": true, "description": "Text to summarise." } ] }
+```
+
+Tool arguments are merged into a copy of `state.variables`, so `LLM invoker` picks the text up from the variable named in `user_message_key` — no placeholder needed.
+
+### Checklist for a new tool
+
+1. Open the node's file in `app/nodes/` and copy its `inputs.get("…")` keys into `config`.
+2. Decide per value: model-chosen → `{{placeholder}}` + declared parameter; fixed or secret → literal / flow-input variable.
+3. Never leave an *optional* placeholder in a URL — make it required or hard-code it.
+4. Write the description as *what it returns + when to use it*.
+5. Add `enum` wherever the value set is closed; add `example` for ids and codes.
+
 ## 13. Scenario matrix — what to configure for what
 
 | Scenario | Key settings |
