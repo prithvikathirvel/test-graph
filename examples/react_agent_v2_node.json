@@ -1,0 +1,147 @@
+{
+  "_about": "Drag-and-drop registration JSON for the ReAct Agent v2 node. 'node_blueprint' is the object to drop on the canvas (same shape as CORE_NODES_BLUEPRINT in app/services/dynamic_flow.py). 'palette' describes each field for the properties panel. 'name' MUST stay exactly 'Autonomous ReAct Agent v2' - that string is the NodeRegistry key.",
+
+  "node_blueprint": {
+    "node_id": "Node_ReActV2_1",
+    "name": "Autonomous ReAct Agent v2",
+    "displayName": "ReAct Agent v2",
+    "type": "agent",
+    "description": "Autonomous agent that reasons step by step and calls tools until it can answer. Typed tool arguments, durable session memory, iteration budget and honest COMPLETED/INCOMPLETE/FAILED status.",
+    "interrupt": false,
+    "next": [],
+    "inputParameters": [
+      { "key": "model",           "value": "llama3",                         "type": "string" },
+      { "key": "user_query",      "value": "{{CHAT_QUERY}}",                 "type": "string" },
+      { "key": "system_prompt",   "value": "You are a helpful autonomous agent. Use the tools provided when you need real data.", "type": "text" },
+      { "key": "tools",           "value": [],                               "type": "array"  },
+      { "key": "memory_window",   "value": 10,                               "type": "number" },
+      { "key": "memory_mode",     "value": "auto",                           "type": "string" },
+      { "key": "memory_context",  "value": "",                               "type": "string" },
+      { "key": "persist_memory",  "value": true,                             "type": "boolean" },
+      { "key": "max_iterations",  "value": 8,                                "type": "number" },
+      { "key": "temperature",     "value": 0,                                "type": "number" },
+      { "key": "response_format", "value": "text",                           "type": "string" },
+      { "key": "return_trace",    "value": false,                            "type": "boolean" },
+      { "key": "fallback_answer", "value": "I could not complete that request. Could you rephrase it?", "type": "string" }
+    ],
+    "outputParameters": [
+      { "key": "output", "value": "agent_response", "type": "string" }
+    ]
+  },
+
+  "palette": {
+    "category": "Agents",
+    "icon": "brain",
+    "registry_key": "Autonomous ReAct Agent v2",
+    "engine_file": "app/nodes/react_agent_v2.py",
+    "supports_interrupt": false,
+    "fields": [
+      { "key": "model", "label": "Model", "widget": "select", "required": true, "default": "llama3",
+        "options": ["llama3", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
+        "help": "'llama3' routes to meta/llama-3.3-70b-instruct on OPENAI_BASE_URL; gemini-* go to Vertex AI." },
+
+      { "key": "user_query", "label": "User Query", "widget": "text", "required": true, "default": "{{CHAT_QUERY}}",
+        "help": "The question for this turn. Leave as {{CHAT_QUERY}} for chat flows." },
+
+      { "key": "system_prompt", "label": "System Prompt", "widget": "textarea", "required": true, "rows": 8,
+        "default": "You are a helpful autonomous agent. Use the tools provided when you need real data.",
+        "help": "Persona and policy. Six built-in operating rules are appended automatically." },
+
+      { "key": "tools", "label": "Tools", "widget": "tool-list", "required": false, "default": [],
+        "item_schema": "tool_object_template",
+        "help": "Each entry becomes a callable tool. Leave empty for a memory-aware chat agent." },
+
+      { "key": "memory_window", "label": "Memory Window (turns)", "widget": "number", "default": 10, "min": 0, "max": 50,
+        "help": "How many previous human turns to keep in context. 0 disables history." },
+
+      { "key": "memory_mode", "label": "Memory Source", "widget": "select", "default": "auto",
+        "options": ["auto", "state", "db", "off"],
+        "help": "auto = checkpoint + MongoDB, richest wins (recommended) | state = checkpoint only | db = MongoDB only (use when the UI rotates thread_id) | off = stateless." },
+
+      { "key": "memory_context", "label": "Sticky Context", "widget": "text", "default": "",
+        "help": "Extra facts pinned into every turn, e.g. 'Customer: {{customer_name}}, Plan: {{plan_name}}'." },
+
+      { "key": "persist_memory", "label": "Persist Memory", "widget": "toggle", "default": true,
+        "help": "Save every turn to MongoDB 'react_agent_memory' so memory survives new threads and restarts." },
+
+      { "key": "max_iterations", "label": "Max Reasoning Steps", "widget": "number", "default": 8, "min": 1, "max": 20,
+        "help": "Think -> Act cycles allowed. The loop stops itself before any recursion error. Also your cost ceiling." },
+
+      { "key": "temperature", "label": "Temperature", "widget": "number", "default": 0, "min": 0, "max": 1, "step": 0.1 },
+
+      { "key": "response_format", "label": "Response Format", "widget": "select", "default": "text",
+        "options": ["text", "html", "json"],
+        "help": "html renders nicely in chat bubbles; json when the next node parses the answer." },
+
+      { "key": "return_trace", "label": "Return Reasoning Trace", "widget": "toggle", "default": false,
+        "help": "Also outputs {{<output>_trace}} with every tool call and observation." },
+
+      { "key": "fallback_answer", "label": "Fallback Answer", "widget": "text",
+        "default": "I could not complete that request. Could you rephrase it?",
+        "help": "Shown only if the agent and the recovery step both fail." }
+    ],
+
+    "outputs": [
+      { "key": "output", "label": "Output Variable", "widget": "text", "required": true, "default": "agent_response",
+        "help": "Name of the flow variable that receives the final answer." }
+    ],
+
+    "also_writes": [
+      { "variable": "{{<output>}}",            "description": "Final answer text" },
+      { "variable": "{{<output>_status}}",     "description": "COMPLETED | INCOMPLETE | FAILED" },
+      { "variable": "{{<output>_iterations}}", "description": "How many Think->Act cycles were used" },
+      { "variable": "{{<output>_tool_calls}}", "description": "List of tools called with their arguments" },
+      { "variable": "{{<output>_trace}}",      "description": "Full observations (only when Return Reasoning Trace is on)" },
+      { "variable": "{{execution_status}}",    "description": "Same as _status; branch on it with a Decision Node" },
+      { "variable": "_agent_status_<node_id>", "description": "Internal signal - makes the API report COMPLETED only when truly complete" }
+    ]
+  },
+
+  "tool_object_template": {
+    "name": "Get Ticket Status",
+    "description": "Fetch the live status of a helpdesk ticket by its id. Use whenever the user mentions a ticket id.",
+    "node_type": "API caller",
+    "config": {
+      "url": "{{HELPDESK_BASE}}/tickets/{{ticket_id}}",
+      "method": "GET",
+      "headers": { "Authorization": "Bearer {{HELPDESK_TOKEN}}" },
+      "timeout": "20"
+    },
+    "parameters": [
+      { "name": "ticket_id", "type": "string", "required": true,
+        "description": "Ticket id such as INC-1042", "example": "INC-1042" }
+    ],
+    "_field_notes": {
+      "name": "Human name; sanitised to a safe id (get_ticket_status).",
+      "description": "What it returns + when to use it. This is what makes the model pick it.",
+      "node_type": "Any NodeRegistry name: API caller, Knowledge Retrieval Node, Web Search, Send Email, Mongo DB caller, Chat with DB, Question Classifier, Vocabulary Extractor, Agent Flow Node, LLM invoker, MCP Tool.",
+      "config": "The target node's own input keys. Placeholders allowed at any depth.",
+      "parameters": "Optional. Omit it and any {{placeholder}} the flow state cannot fill becomes a required string argument. Supported type: string, integer, number, boolean, array, object. Extras: required, enum, example."
+    }
+  },
+
+  "minimal_drop_in_example": {
+    "node_id": "Node_ReActV2_1",
+    "name": "Autonomous ReAct Agent v2",
+    "displayName": "Support Agent",
+    "type": "agent",
+    "interrupt": false,
+    "inputParameters": [
+      { "key": "model",         "value": "llama3",          "type": "string" },
+      { "key": "user_query",    "value": "{{CHAT_QUERY}}",  "type": "string" },
+      { "key": "system_prompt", "value": "You are a helpful support agent.", "type": "text" },
+      { "key": "tools",         "value": [], "type": "array" }
+    ],
+    "outputParameters": [
+      { "key": "output", "value": "agent_response", "type": "string" }
+    ]
+  },
+
+  "_rules": [
+    "'name' must be exactly 'Autonomous ReAct Agent v2' - the compiler looks up NodeRegistry by node['name'].",
+    "'type' must NOT be start / output / outputs / conditions / iterator / agentflow / inputs - those are reserved by the compiler. Use 'agent'.",
+    "Only 'model', 'user_query' and 'outputParameters' are truly required; every other input has a safe default.",
+    "Edges use {'from': node_id, 'to': node_id}. Wire Start -> this node -> your next node.",
+    "Keep session_id stable across turns for memory; thread_id may rotate when memory_mode is 'auto' or 'db'."
+  ]
+}
