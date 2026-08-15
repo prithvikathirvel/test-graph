@@ -29,6 +29,7 @@ import app.nodes.mcp_node
 import app.nodes.agent_flow
 import app.nodes.db_chat
 import app.nodes.react_agent
+import app.nodes.react_agent_v2
 import app.nodes.ontology
 
 setup_logging()
