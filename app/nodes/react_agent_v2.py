@@ -584,7 +584,7 @@ BASE_RULES = """
 """.strip()
 
 
-@NodeRegistry.register("Autonomous ReAct Agent v2")
+@NodeRegistry.register("ReAct Agent v2")
 async def react_agent_v2_node(state: FlowState, node_config: dict) -> dict:
     logger.info("🧠 Entering Autonomous ReAct Agent v2...")
     variables = state.get("variables", {}) or {}
@@ -806,8 +806,16 @@ async def react_agent_v2_node(state: FlowState, node_config: dict) -> dict:
     )
 
     # ── outputs + memory write-back ──────────────────────────────────────────
+    # parse so downstream dot-notation (e.g. {{proposed_plan.status}}) works
+    stored_answer: Any = final_answer
+    if response_format == "json" and isinstance(final_answer, str):
+        try:
+            stored_answer = json.loads(final_answer)
+        except (json.JSONDecodeError, ValueError):
+            pass
+
     out_vars: Dict[str, Any] = {
-        output_key: final_answer,
+        output_key: stored_answer,
         f"{output_key}_status": status,
         f"{output_key}_tool_calls": tool_calls_made,
         f"{output_key}_iterations": iterations,

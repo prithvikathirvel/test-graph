@@ -1,147 +1,1081 @@
 {
-  "_about": "Drag-and-drop registration JSON for the ReAct Agent v2 node. 'node_blueprint' is the object to drop on the canvas (same shape as CORE_NODES_BLUEPRINT in app/services/dynamic_flow.py). 'palette' describes each field for the properties panel. 'name' MUST stay exactly 'Autonomous ReAct Agent v2' - that string is the NodeRegistry key.",
-
-  "node_blueprint": {
-    "node_id": "Node_ReActV2_1",
-    "name": "Autonomous ReAct Agent v2",
-    "displayName": "ReAct Agent v2",
-    "type": "agent",
-    "description": "Autonomous agent that reasons step by step and calls tools until it can answer. Typed tool arguments, durable session memory, iteration budget and honest COMPLETED/INCOMPLETE/FAILED status.",
-    "interrupt": false,
-    "next": [],
-    "inputParameters": [
-      { "key": "model",           "value": "llama3",                         "type": "string" },
-      { "key": "user_query",      "value": "{{CHAT_QUERY}}",                 "type": "string" },
-      { "key": "system_prompt",   "value": "You are a helpful autonomous agent. Use the tools provided when you need real data.", "type": "text" },
-      { "key": "tools",           "value": [],                               "type": "array"  },
-      { "key": "memory_window",   "value": 10,                               "type": "number" },
-      { "key": "memory_mode",     "value": "auto",                           "type": "string" },
-      { "key": "memory_context",  "value": "",                               "type": "string" },
-      { "key": "persist_memory",  "value": true,                             "type": "boolean" },
-      { "key": "max_iterations",  "value": 8,                                "type": "number" },
-      { "key": "temperature",     "value": 0,                                "type": "number" },
-      { "key": "response_format", "value": "text",                           "type": "string" },
-      { "key": "return_trace",    "value": false,                            "type": "boolean" },
-      { "key": "fallback_answer", "value": "I could not complete that request. Could you rephrase it?", "type": "string" }
+  "id": "9b7ec58a-6fb6-4d1f-9d95-37d9c478ea25",
+  "name": "CMDB Execution Plan Generator (ReAct v2)",
+  "description": "Validates a customer, resolves owned CMDB assets, decomposes and validates a complex request, presents a reviewable execution plan, obtains approval, and autonomously executes approved MCP actions with ReAct Agent v2.",
+  "type": "flow",
+  "graphSpec": {
+    "nodes": [
+      {
+        "node_id": "Start_1",
+        "name": "Start Node",
+        "displayName": "Start",
+        "type": "start",
+        "description": "Flow entry point.",
+        "interrupt": false,
+        "next": [
+          "Ask_Customer_ID_2"
+        ],
+        "inputParameters": [],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Ask_Customer_ID_2",
+        "name": "Question Node",
+        "displayName": "Ask Customer ID",
+        "type": "inputs",
+        "description": "Prompts for the customer identifier.",
+        "interrupt": true,
+        "next": [
+          "Fetch_User_Profile_3"
+        ],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "<div style='font-family:system-ui,sans-serif'><h3>👋 Welcome to Sify IT Support</h3><p>Enter your <b>Customer ID</b> to continue.</p></div>",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "customer_id",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Fetch_User_Profile_3",
+        "name": "API caller",
+        "displayName": "Fetch User Profile",
+        "type": "tool",
+        "description": "Loads the customer profile for identity confirmation.",
+        "interrupt": false,
+        "next": [
+          "Profile_Exists_4"
+        ],
+        "inputParameters": [
+          {
+            "key": "method",
+            "value": "GET",
+            "type": "text"
+          },
+          {
+            "key": "url",
+            "value": "https://apidev.sifymodernization.digital/ai/api/agent-studio/users/{{customer_id}}",
+            "type": "text"
+          },
+          {
+            "key": "headers",
+            "value": {},
+            "type": "object"
+          },
+          {
+            "key": "timeout",
+            "value": 10,
+            "type": "number"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_profile",
+            "type": "object"
+          }
+        ]
+      },
+      {
+        "node_id": "Profile_Exists_4",
+        "name": "Decision Node",
+        "displayName": "User Profile Exists?",
+        "type": "conditions",
+        "description": "Retries customer ID entry when no profile is returned.",
+        "interrupt": false,
+        "next": [
+          "Ask_Customer_ID_2",
+          "Review_Profile_5"
+        ],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{user_profile}}",
+            "type": "object"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "is_empty",
+                "comparisonValue": "",
+                "nextNode": "Ask_Customer_ID_2"
+              },
+              {
+                "operator": "is_not_empty",
+                "comparisonValue": "",
+                "nextNode": "Review_Profile_5"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Review_Profile_5",
+        "name": "Question Node",
+        "displayName": "Review User Profile",
+        "type": "inputs",
+        "description": "Shows the retrieved profile and requires identity confirmation.",
+        "interrupt": true,
+        "next": [
+          "Profile_Confirmed_6"
+        ],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "<div style='font-family:system-ui,sans-serif;padding:12px;border:1px solid #dbeafe;border-radius:8px'><h3>Customer profile</h3><pre style='white-space:pre-wrap'>{{user_profile}}</pre><p>Is this your profile?</p></div>",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {
+              "Option1": "confirm",
+              "Option2": "retry"
+            },
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "profile_review",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Profile_Confirmed_6",
+        "name": "Decision Node",
+        "displayName": "Profile Confirmed?",
+        "type": "conditions",
+        "description": "Continues only after the customer confirms the profile.",
+        "interrupt": false,
+        "next": [
+          "Fetch_Customer_Assets_7",
+          "Ask_Customer_ID_2"
+        ],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{profile_review}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "confirm",
+                "nextNode": "Fetch_Customer_Assets_7"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "retry",
+                "nextNode": "Ask_Customer_ID_2"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Fetch_Customer_Assets_7",
+        "name": "API caller",
+        "displayName": "Fetch Customer Assets",
+        "type": "tool",
+        "description": "Retrieves all CMDB assets belonging to the confirmed customer.",
+        "interrupt": false,
+        "next": [
+          "Assets_Available_8"
+        ],
+        "inputParameters": [
+          {
+            "key": "method",
+            "value": "POST",
+            "type": "text"
+          },
+          {
+            "key": "url",
+            "value": "http://1.6.37.35/cmdb/query",
+            "type": "text"
+          },
+          {
+            "key": "data",
+            "value": {
+              "query": "MATCH (n)-[:BELONGS_TO]->(:Customer {id: $cust_id}) OPTIONAL MATCH (n)-[r]->(m) WHERE NOT n:ActionDefinition RETURN labels(n) AS labels, properties(n) AS asset, type(r) AS relationship, labels(m) AS related_labels, properties(m) AS related LIMIT 500",
+              "parameters": {
+                "cust_id": "{{customer_id}}"
+              }
+            },
+            "type": "object"
+          },
+          {
+            "key": "headers",
+            "value": {
+              "Content-Type": "application/json"
+            },
+            "type": "object"
+          },
+          {
+            "key": "timeout",
+            "value": 20,
+            "type": "number"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "customer_assets",
+            "type": "object"
+          }
+        ]
+      },
+      {
+        "node_id": "Assets_Available_8",
+        "name": "Decision Node",
+        "displayName": "Assets Available?",
+        "type": "conditions",
+        "description": "Stops safely when the customer has no CMDB assets.",
+        "interrupt": false,
+        "next": [
+          "End_No_Assets_9",
+          "Ask_User_Query_10"
+        ],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{customer_assets}}",
+            "type": "object"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "is_empty",
+                "comparisonValue": "",
+                "nextNode": "End_No_Assets_9"
+              },
+              {
+                "operator": "is_not_empty",
+                "comparisonValue": "",
+                "nextNode": "Ask_User_Query_10"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "End_No_Assets_9",
+        "name": "End Node",
+        "displayName": "End — No Assets",
+        "type": "output",
+        "description": "Ends when no owned assets can be resolved.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "final_input",
+            "value": "<div style='font-family:system-ui,sans-serif;padding:12px;border-left:4px solid #ef4444'><b>No CMDB assets found</b><br>No assets were found for Customer ID <b>{{customer_id}}</b>. Verify the ID or contact the CMDB administrator.</div>",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "final_output",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Ask_User_Query_10",
+        "name": "Question Node",
+        "displayName": "Ask Complex Request",
+        "type": "inputs",
+        "description": "Collects the operation or troubleshooting request to plan.",
+        "interrupt": true,
+        "next": [
+          "Plan_With_ReAct_11"
+        ],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "<div style='font-family:system-ui,sans-serif'><h3>How can I help?</h3><p>Describe the actions you need across your infrastructure. Include target names, desired values, timing, and constraints when known.</p></div>",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_query",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Plan_With_ReAct_11",
+        "name": "Autonomous ReAct Agent v2",
+        "displayName": "CMDB ReAct Planner",
+        "type": "agent",
+        "description": "Uses CMDB schema, customer assets, action definitions, and MCP discovery to produce a validated atomic execution plan without executing changes.",
+        "interrupt": false,
+        "next": [
+          "Plan_Status_12"
+        ],
+        "inputParameters": [
+          {
+            "key": "model",
+            "value": "llama3",
+            "type": "string"
+          },
+          {
+            "key": "user_query",
+            "value": "{{user_query}}",
+            "type": "string"
+          },
+          {
+            "key": "system_prompt",
+            "value": "You are the CMDB planning and validation agent for Customer ID {{customer_id}}. PLAN ONLY; never execute an MCP tool and never claim an action happened. Decompose the request into ordered, atomic sub-tasks. Resolve every target only from the customer's owned assets. Use the ontology to validate labels, properties, and relationships. Use action capabilities to validate each action and its required parameters. Use MCP discovery to prove that an implementation tool exists. Never invent assets, action definitions, server IDs, tool names, arguments, or results. If a required action parameter or target is missing, return clarification_needed with one precise question. If an action is unsupported, return unsupported and explain why.\n\nReturn exactly one JSON object with this schema: {\"status\":\"ready|clarification_needed|no_assets|unsupported\",\"review_html\":\"safe concise HTML for the customer\",\"clarification_question\":\"string\",\"sub_tasks\":[{\"id\":1,\"action\":\"string\",\"ci_type\":\"string\",\"target\":{\"name\":\"string\",\"asset_id\":\"string\"},\"parameters\":{},\"depends_on\":[],\"risk\":\"low|medium|high\"}],\"steps\":[{\"step\":1,\"sub_task_id\":1,\"description\":\"string\",\"server_id\":\"exact discovered server id or empty\",\"tool_name\":\"exact discovered tool name or empty\",\"arguments\":{},\"expected_result\":\"string\"}]}. review_html must list action, resolved target, parameters, dependencies, risk, and proposed tool, and must end by asking for confirmation. Do not wrap JSON in markdown fences.",
+            "type": "text"
+          },
+          {
+            "key": "tools",
+            "value": [
+              {
+                "name": "Fetch CMDB Ontology",
+                "description": "Fetch the authoritative CMDB ontology in Turtle RDF. Use it to validate CI labels, relationships, and property names.",
+                "node_type": "API caller",
+                "config": {
+                  "method": "GET",
+                  "url": "http://1.6.37.35/cmdb/schema?response_type=turtle",
+                  "headers": {},
+                  "timeout": 15
+                }
+              },
+              {
+                "name": "Get Customer Assets",
+                "description": "Return only assets owned by the already authenticated customer. Use this to resolve generic references to exact asset names and ids.",
+                "node_type": "API caller",
+                "config": {
+                  "method": "POST",
+                  "url": "http://1.6.37.35/cmdb/query",
+                  "headers": {
+                    "Content-Type": "application/json"
+                  },
+                  "data": {
+                    "query": "MATCH (n)-[:BELONGS_TO]->(:Customer {id: $cust_id}) OPTIONAL MATCH (n)-[r]->(m) WHERE NOT n:ActionDefinition RETURN labels(n) AS labels, properties(n) AS asset, type(r) AS relationship, labels(m) AS related_labels, properties(m) AS related LIMIT 500",
+                    "parameters": {
+                      "cust_id": "{{customer_id}}"
+                    }
+                  },
+                  "timeout": 20
+                }
+              },
+              {
+                "name": "Get Action Capabilities",
+                "description": "Fetch allowed CMDB ActionDefinition records and required parameters for one exact CI type.",
+                "node_type": "API caller",
+                "config": {
+                  "method": "POST",
+                  "url": "http://1.6.37.35/cmdb/query",
+                  "headers": {
+                    "Content-Type": "application/json"
+                  },
+                  "data": {
+                    "query": "MATCH (t:Type {name: $ci_type})<-[:APPLIES_TO]-(a:ActionDefinition) RETURN properties(a) AS action",
+                    "parameters": {
+                      "ci_type": "{{ci_type}}"
+                    }
+                  },
+                  "timeout": 15
+                },
+                "parameters": [
+                  {
+                    "name": "ci_type",
+                    "type": "string",
+                    "required": true,
+                    "description": "Exact CI type resolved from the ontology and customer asset."
+                  }
+                ]
+              },
+              {
+                "name": "Discover Available MCP Tools",
+                "description": "List connected MCP servers, exact tool names, descriptions, and input schemas. Use it to map every executable step; this only discovers and does not execute.",
+                "node_type": "API caller",
+                "config": {
+                  "method": "GET",
+                  "url": "http://localhost:5000/engine/mcp/tools",
+                  "headers": {},
+                  "timeout": 15
+                }
+              }
+            ],
+            "type": "array"
+          },
+          {
+            "key": "memory_window",
+            "value": 12,
+            "type": "number"
+          },
+          {
+            "key": "memory_mode",
+            "value": "auto",
+            "type": "string"
+          },
+          {
+            "key": "memory_context",
+            "value": "Confirmed customer_id={{customer_id}}. A non-empty customer asset set was verified before planning.",
+            "type": "string"
+          },
+          {
+            "key": "persist_memory",
+            "value": true,
+            "type": "boolean"
+          },
+          {
+            "key": "max_iterations",
+            "value": 10,
+            "type": "number"
+          },
+          {
+            "key": "temperature",
+            "value": 0,
+            "type": "number"
+          },
+          {
+            "key": "response_format",
+            "value": "json",
+            "type": "string"
+          },
+          {
+            "key": "return_trace",
+            "value": true,
+            "type": "boolean"
+          },
+          {
+            "key": "fallback_answer",
+            "value": "{\"status\":\"unsupported\",\"review_html\":\"<p>I could not build a validated plan. Please provide exact targets and actions.</p>\",\"clarification_question\":\"\",\"sub_tasks\":[],\"steps\":[]}",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "proposed_plan",
+            "type": "object"
+          }
+        ]
+      },
+      {
+        "node_id": "Plan_Status_12",
+        "name": "Decision Node",
+        "displayName": "Is Plan Ready?",
+        "type": "conditions",
+        "description": "Routes ready plans to approval and incomplete plans to clarification.",
+        "interrupt": false,
+        "next": [
+          "Confirm_Plan_13",
+          "Ask_Plan_Clarification_14",
+          "End_Plan_Rejected_15"
+        ],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{proposed_plan.status}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "ready",
+                "nextNode": "Confirm_Plan_13"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "clarification_needed",
+                "nextNode": "Ask_Plan_Clarification_14"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "no_assets",
+                "nextNode": "End_Plan_Rejected_15"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "unsupported",
+                "nextNode": "End_Plan_Rejected_15"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Confirm_Plan_13",
+        "name": "Question Node",
+        "displayName": "Review and Confirm Plan",
+        "type": "inputs",
+        "description": "Human approval gate before any MCP action can execute.",
+        "interrupt": true,
+        "next": [
+          "Confirmation_Decision_16"
+        ],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "{{proposed_plan.review_html}}",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {
+              "Option1": "confirm",
+              "Option2": "modify",
+              "Option3": "cancel"
+            },
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "plan_confirmation",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Ask_Plan_Clarification_14",
+        "name": "Question Node",
+        "displayName": "Clarify or Modify Plan",
+        "type": "inputs",
+        "description": "Collects missing action parameters or requested plan changes, then replans.",
+        "interrupt": true,
+        "next": [
+          "Plan_With_ReAct_11"
+        ],
+        "inputParameters": [
+          {
+            "key": "question_text",
+            "value": "<div style='font-family:system-ui,sans-serif;padding:12px'><h3>More information needed</h3><p>{{proposed_plan.clarification_question}}</p><p>Provide the missing details or describe your requested changes.</p></div>",
+            "type": "string"
+          },
+          {
+            "key": "options",
+            "value": {},
+            "type": "object"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "user_query",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "End_Plan_Rejected_15",
+        "name": "End Node",
+        "displayName": "End — Cannot Plan",
+        "type": "output",
+        "description": "Ends safely when the request cannot be validated.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "final_input",
+            "value": "{{proposed_plan.review_html}}",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "final_output",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Confirmation_Decision_16",
+        "name": "Decision Node",
+        "displayName": "Approval Decision",
+        "type": "conditions",
+        "description": "Executes only confirmed plans; modifications return to the planner.",
+        "interrupt": false,
+        "next": [
+          "Execute_With_ReAct_17",
+          "Ask_Plan_Clarification_14",
+          "End_Cancelled_18"
+        ],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{plan_confirmation}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "confirm",
+                "nextNode": "Execute_With_ReAct_17"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "modify",
+                "nextNode": "Ask_Plan_Clarification_14"
+              },
+              {
+                "operator": "equal_to",
+                "comparisonValue": "cancel",
+                "nextNode": "End_Cancelled_18"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "Execute_With_ReAct_17",
+        "name": "Autonomous ReAct Agent v2",
+        "displayName": "Approved CMDB Plan Executor",
+        "type": "agent",
+        "description": "Executes only the customer-approved plan by discovering and calling exact MCP tools, then reports each result.",
+        "interrupt": false,
+        "next": [
+          "Execution_Status_19"
+        ],
+        "inputParameters": [
+          {
+            "key": "model",
+            "value": "llama3",
+            "type": "string"
+          },
+          {
+            "key": "user_query",
+            "value": "Execute this customer-approved plan exactly as written. Do not add actions: {{proposed_plan}}",
+            "type": "string"
+          },
+          {
+            "key": "system_prompt",
+            "value": "You are the CMDB execution agent for confirmed Customer ID {{customer_id}}. The user has passed the explicit approval gate. Execute ONLY steps present in the approved plan, in dependency order. Before every action, verify the target still belongs to this customer and verify the exact MCP server/tool against fresh discovery. Never substitute another target. Never invent arguments or success. Call Execute Discovered MCP Tool once per executable approved step. Read every result. On TOOL_ERROR, correct arguments and retry once; otherwise mark that step failed and continue only where dependencies permit. Internal or unmapped steps must be reported as skipped, not fabricated. Return concise HTML with an overall status and one row/list item per step containing action, target, tool, and actual result. Clearly distinguish succeeded, failed, and skipped steps.",
+            "type": "text"
+          },
+          {
+            "key": "tools",
+            "value": [
+              {
+                "name": "Get Customer Assets",
+                "description": "Re-fetch customer-owned assets immediately before execution to verify every approved target still belongs to the authenticated customer.",
+                "node_type": "API caller",
+                "config": {
+                  "method": "POST",
+                  "url": "http://1.6.37.35/cmdb/query",
+                  "headers": {
+                    "Content-Type": "application/json"
+                  },
+                  "data": {
+                    "query": "MATCH (n)-[:BELONGS_TO]->(:Customer {id: $cust_id}) RETURN labels(n) AS labels, properties(n) AS asset LIMIT 500",
+                    "parameters": {
+                      "cust_id": "{{customer_id}}"
+                    }
+                  },
+                  "timeout": 20
+                }
+              },
+              {
+                "name": "Get Action Capabilities",
+                "description": "Revalidate that an approved action is still allowed for its CI type and obtain its current required parameter schema.",
+                "node_type": "API caller",
+                "config": {
+                  "method": "POST",
+                  "url": "http://1.6.37.35/cmdb/query",
+                  "headers": {
+                    "Content-Type": "application/json"
+                  },
+                  "data": {
+                    "query": "MATCH (t:Type {name: $ci_type})<-[:APPLIES_TO]-(a:ActionDefinition) RETURN properties(a) AS action",
+                    "parameters": {
+                      "ci_type": "{{ci_type}}"
+                    }
+                  },
+                  "timeout": 15
+                },
+                "parameters": [
+                  {
+                    "name": "ci_type",
+                    "type": "string",
+                    "required": true,
+                    "description": "Exact CI type from the approved sub-task."
+                  }
+                ]
+              },
+              {
+                "name": "Discover Available MCP Tools",
+                "description": "Return currently connected MCP servers, exact tool names, descriptions, and input schemas. Always call before execution.",
+                "node_type": "API caller",
+                "config": {
+                  "method": "GET",
+                  "url": "http://localhost:5000/engine/mcp/tools",
+                  "headers": {},
+                  "timeout": 15
+                }
+              },
+              {
+                "name": "Execute Discovered MCP Tool",
+                "description": "Execute one exact MCP tool from fresh discovery. Use only for an approved plan step and pass arguments matching its discovered schema.",
+                "node_type": "Dynamic MCP Tool",
+                "config": {},
+                "parameters": [
+                  {
+                    "name": "server_id",
+                    "type": "string",
+                    "required": true,
+                    "description": "Exact connected MCP server id returned by discovery."
+                  },
+                  {
+                    "name": "tool_name",
+                    "type": "string",
+                    "required": true,
+                    "description": "Exact MCP tool name returned by discovery."
+                  },
+                  {
+                    "name": "arguments",
+                    "type": "object",
+                    "required": true,
+                    "description": "Complete arguments object matching the discovered MCP input schema."
+                  }
+                ]
+              }
+            ],
+            "type": "array"
+          },
+          {
+            "key": "memory_window",
+            "value": 8,
+            "type": "number"
+          },
+          {
+            "key": "memory_mode",
+            "value": "auto",
+            "type": "string"
+          },
+          {
+            "key": "memory_context",
+            "value": "Confirmed customer_id={{customer_id}}. This node is reachable only after plan_confirmation=confirm.",
+            "type": "string"
+          },
+          {
+            "key": "persist_memory",
+            "value": true,
+            "type": "boolean"
+          },
+          {
+            "key": "max_iterations",
+            "value": 16,
+            "type": "number"
+          },
+          {
+            "key": "temperature",
+            "value": 0,
+            "type": "number"
+          },
+          {
+            "key": "response_format",
+            "value": "html",
+            "type": "string"
+          },
+          {
+            "key": "return_trace",
+            "value": true,
+            "type": "boolean"
+          },
+          {
+            "key": "fallback_answer",
+            "value": "<p>I could not complete the approved plan. No unverified success has been reported. Please review the execution logs or contact an operator.</p>",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "execution_summary",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "End_Cancelled_18",
+        "name": "End Node",
+        "displayName": "End — Cancelled",
+        "type": "output",
+        "description": "Ends without executing any action when the user cancels.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "final_input",
+            "value": "<div style='font-family:system-ui,sans-serif;padding:12px'><b>Plan cancelled.</b><br>No approved actions were executed.</div>",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "final_output",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "Execution_Status_19",
+        "name": "Decision Node",
+        "displayName": "Execution Completed?",
+        "type": "conditions",
+        "description": "Reports whether the ReAct executor finished naturally or returned a partial/fallback result.",
+        "interrupt": false,
+        "next": [
+          "End_Complete_20",
+          "End_Partial_21"
+        ],
+        "inputParameters": [
+          {
+            "key": "inputValue",
+            "value": "{{execution_summary_status}}",
+            "type": "text"
+          },
+          {
+            "key": "conditions",
+            "value": [
+              {
+                "operator": "equal_to",
+                "comparisonValue": "COMPLETED",
+                "nextNode": "End_Complete_20"
+              },
+              {
+                "operator": "not_equals",
+                "comparisonValue": "COMPLETED",
+                "nextNode": "End_Partial_21"
+              }
+            ],
+            "type": "condition"
+          }
+        ],
+        "outputParameters": []
+      },
+      {
+        "node_id": "End_Complete_20",
+        "name": "End Node",
+        "displayName": "Flow Complete",
+        "type": "output",
+        "description": "Returns the consolidated execution report.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "final_input",
+            "value": "{{execution_summary}}",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "final_output",
+            "type": "string"
+          }
+        ]
+      },
+      {
+        "node_id": "End_Partial_21",
+        "name": "End Node",
+        "displayName": "Flow Partially Complete",
+        "type": "output",
+        "description": "Returns the best available report when the executor reaches a guard or fails.",
+        "interrupt": false,
+        "next": [],
+        "inputParameters": [
+          {
+            "key": "final_input",
+            "value": "{{execution_summary}}<br><br><div style='padding:10px;border-left:4px solid #f59e0b'><b>Execution status: {{execution_summary_status}}</b><br>The executor used {{execution_summary_iterations}} reasoning step(s). Review failed or incomplete items before retrying.</div>",
+            "type": "string"
+          }
+        ],
+        "outputParameters": [
+          {
+            "key": "output",
+            "value": "final_output",
+            "type": "string"
+          }
+        ]
+      }
     ],
-    "outputParameters": [
-      { "key": "output", "value": "agent_response", "type": "string" }
+    "edges": [
+      {
+        "from": "Start_1",
+        "to": "Ask_Customer_ID_2"
+      },
+      {
+        "from": "Ask_Customer_ID_2",
+        "to": "Fetch_User_Profile_3"
+      },
+      {
+        "from": "Fetch_User_Profile_3",
+        "to": "Profile_Exists_4"
+      },
+      {
+        "from": "Profile_Exists_4",
+        "to": "Ask_Customer_ID_2",
+        "condition": "0"
+      },
+      {
+        "from": "Profile_Exists_4",
+        "to": "Review_Profile_5",
+        "condition": "1"
+      },
+      {
+        "from": "Review_Profile_5",
+        "to": "Profile_Confirmed_6"
+      },
+      {
+        "from": "Profile_Confirmed_6",
+        "to": "Fetch_Customer_Assets_7",
+        "condition": "0"
+      },
+      {
+        "from": "Profile_Confirmed_6",
+        "to": "Ask_Customer_ID_2",
+        "condition": "1"
+      },
+      {
+        "from": "Fetch_Customer_Assets_7",
+        "to": "Assets_Available_8"
+      },
+      {
+        "from": "Assets_Available_8",
+        "to": "End_No_Assets_9",
+        "condition": "0"
+      },
+      {
+        "from": "Assets_Available_8",
+        "to": "Ask_User_Query_10",
+        "condition": "1"
+      },
+      {
+        "from": "Ask_User_Query_10",
+        "to": "Plan_With_ReAct_11"
+      },
+      {
+        "from": "Plan_With_ReAct_11",
+        "to": "Plan_Status_12"
+      },
+      {
+        "from": "Plan_Status_12",
+        "to": "Confirm_Plan_13",
+        "condition": "0"
+      },
+      {
+        "from": "Plan_Status_12",
+        "to": "Ask_Plan_Clarification_14",
+        "condition": "1"
+      },
+      {
+        "from": "Plan_Status_12",
+        "to": "End_Plan_Rejected_15",
+        "condition": "2"
+      },
+      {
+        "from": "Plan_Status_12",
+        "to": "End_Plan_Rejected_15",
+        "condition": "3"
+      },
+      {
+        "from": "Ask_Plan_Clarification_14",
+        "to": "Plan_With_ReAct_11"
+      },
+      {
+        "from": "Confirm_Plan_13",
+        "to": "Confirmation_Decision_16"
+      },
+      {
+        "from": "Confirmation_Decision_16",
+        "to": "Execute_With_ReAct_17",
+        "condition": "0"
+      },
+      {
+        "from": "Confirmation_Decision_16",
+        "to": "Ask_Plan_Clarification_14",
+        "condition": "1"
+      },
+      {
+        "from": "Confirmation_Decision_16",
+        "to": "End_Cancelled_18",
+        "condition": "2"
+      },
+      {
+        "from": "Execute_With_ReAct_17",
+        "to": "Execution_Status_19"
+      },
+      {
+        "from": "Execution_Status_19",
+        "to": "End_Complete_20",
+        "condition": "0"
+      },
+      {
+        "from": "Execution_Status_19",
+        "to": "End_Partial_21",
+        "condition": "1"
+      }
     ]
   },
-
-  "palette": {
-    "category": "Agents",
-    "icon": "brain",
-    "registry_key": "Autonomous ReAct Agent v2",
-    "engine_file": "app/nodes/react_agent_v2.py",
-    "supports_interrupt": false,
-    "fields": [
-      { "key": "model", "label": "Model", "widget": "select", "required": true, "default": "llama3",
-        "options": ["llama3", "gemini-2.5-pro", "gemini-2.5-flash", "gemini-1.5-pro"],
-        "help": "'llama3' routes to meta/llama-3.3-70b-instruct on OPENAI_BASE_URL; gemini-* go to Vertex AI." },
-
-      { "key": "user_query", "label": "User Query", "widget": "text", "required": true, "default": "{{CHAT_QUERY}}",
-        "help": "The question for this turn. Leave as {{CHAT_QUERY}} for chat flows." },
-
-      { "key": "system_prompt", "label": "System Prompt", "widget": "textarea", "required": true, "rows": 8,
-        "default": "You are a helpful autonomous agent. Use the tools provided when you need real data.",
-        "help": "Persona and policy. Six built-in operating rules are appended automatically." },
-
-      { "key": "tools", "label": "Tools", "widget": "tool-list", "required": false, "default": [],
-        "item_schema": "tool_object_template",
-        "help": "Each entry becomes a callable tool. Leave empty for a memory-aware chat agent." },
-
-      { "key": "memory_window", "label": "Memory Window (turns)", "widget": "number", "default": 10, "min": 0, "max": 50,
-        "help": "How many previous human turns to keep in context. 0 disables history." },
-
-      { "key": "memory_mode", "label": "Memory Source", "widget": "select", "default": "auto",
-        "options": ["auto", "state", "db", "off"],
-        "help": "auto = checkpoint + MongoDB, richest wins (recommended) | state = checkpoint only | db = MongoDB only (use when the UI rotates thread_id) | off = stateless." },
-
-      { "key": "memory_context", "label": "Sticky Context", "widget": "text", "default": "",
-        "help": "Extra facts pinned into every turn, e.g. 'Customer: {{customer_name}}, Plan: {{plan_name}}'." },
-
-      { "key": "persist_memory", "label": "Persist Memory", "widget": "toggle", "default": true,
-        "help": "Save every turn to MongoDB 'react_agent_memory' so memory survives new threads and restarts." },
-
-      { "key": "max_iterations", "label": "Max Reasoning Steps", "widget": "number", "default": 8, "min": 1, "max": 20,
-        "help": "Think -> Act cycles allowed. The loop stops itself before any recursion error. Also your cost ceiling." },
-
-      { "key": "temperature", "label": "Temperature", "widget": "number", "default": 0, "min": 0, "max": 1, "step": 0.1 },
-
-      { "key": "response_format", "label": "Response Format", "widget": "select", "default": "text",
-        "options": ["text", "html", "json"],
-        "help": "html renders nicely in chat bubbles; json when the next node parses the answer." },
-
-      { "key": "return_trace", "label": "Return Reasoning Trace", "widget": "toggle", "default": false,
-        "help": "Also outputs {{<output>_trace}} with every tool call and observation." },
-
-      { "key": "fallback_answer", "label": "Fallback Answer", "widget": "text",
-        "default": "I could not complete that request. Could you rephrase it?",
-        "help": "Shown only if the agent and the recovery step both fail." }
-    ],
-
-    "outputs": [
-      { "key": "output", "label": "Output Variable", "widget": "text", "required": true, "default": "agent_response",
-        "help": "Name of the flow variable that receives the final answer." }
-    ],
-
-    "also_writes": [
-      { "variable": "{{<output>}}",            "description": "Final answer text" },
-      { "variable": "{{<output>_status}}",     "description": "COMPLETED | INCOMPLETE | FAILED" },
-      { "variable": "{{<output>_iterations}}", "description": "How many Think->Act cycles were used" },
-      { "variable": "{{<output>_tool_calls}}", "description": "List of tools called with their arguments" },
-      { "variable": "{{<output>_trace}}",      "description": "Full observations (only when Return Reasoning Trace is on)" },
-      { "variable": "{{execution_status}}",    "description": "Same as _status; branch on it with a Decision Node" },
-      { "variable": "_agent_status_<node_id>", "description": "Internal signal - makes the API report COMPLETED only when truly complete" }
-    ]
+  "voice_enabled": true,
+  "voice_config": {
+    "tts_provider": "piper",
+    "stt_provider": "whisper",
+    "mode": "voice_in_voice_out"
   },
-
-  "tool_object_template": {
-    "name": "Get Ticket Status",
-    "description": "Fetch the live status of a helpdesk ticket by its id. Use whenever the user mentions a ticket id.",
-    "node_type": "API caller",
-    "config": {
-      "url": "{{HELPDESK_BASE}}/tickets/{{ticket_id}}",
-      "method": "GET",
-      "headers": { "Authorization": "Bearer {{HELPDESK_TOKEN}}" },
-      "timeout": "20"
-    },
-    "parameters": [
-      { "name": "ticket_id", "type": "string", "required": true,
-        "description": "Ticket id such as INC-1042", "example": "INC-1042" }
-    ],
-    "_field_notes": {
-      "name": "Human name; sanitised to a safe id (get_ticket_status).",
-      "description": "What it returns + when to use it. This is what makes the model pick it.",
-      "node_type": "Any NodeRegistry name: API caller, Knowledge Retrieval Node, Web Search, Send Email, Mongo DB caller, Chat with DB, Question Classifier, Vocabulary Extractor, Agent Flow Node, LLM invoker, MCP Tool.",
-      "config": "The target node's own input keys. Placeholders allowed at any depth.",
-      "parameters": "Optional. Omit it and any {{placeholder}} the flow state cannot fill becomes a required string argument. Supported type: string, integer, number, boolean, array, object. Extras: required, enum, example."
+  "status": "active",
+  "version": "4.0.0",
+  "isPublic": true,
+  "createdBy": "user",
+  "createdAt": "2026-08-16T00:00:00.000Z",
+  "updatedAt": "2026-08-16T00:00:00.000Z",
+  "agent_id": "9b7ec58a-6fb6-4d1f-9d95-37d9c478ea25",
+  "inputs": [
+    {
+      "key": "CHAT_QUERY",
+      "type": "text",
+      "scope": "local",
+      "value": ""
     }
-  },
-
-  "minimal_drop_in_example": {
-    "node_id": "Node_ReActV2_1",
-    "name": "Autonomous ReAct Agent v2",
-    "displayName": "Support Agent",
-    "type": "agent",
-    "interrupt": false,
-    "inputParameters": [
-      { "key": "model",         "value": "llama3",          "type": "string" },
-      { "key": "user_query",    "value": "{{CHAT_QUERY}}",  "type": "string" },
-      { "key": "system_prompt", "value": "You are a helpful support agent.", "type": "text" },
-      { "key": "tools",         "value": [], "type": "array" }
-    ],
-    "outputParameters": [
-      { "key": "output", "value": "agent_response", "type": "string" }
-    ]
-  },
-
-  "_rules": [
-    "'name' must be exactly 'Autonomous ReAct Agent v2' - the compiler looks up NodeRegistry by node['name'].",
-    "'type' must NOT be start / output / outputs / conditions / iterator / agentflow / inputs - those are reserved by the compiler. Use 'agent'.",
-    "Only 'model', 'user_query' and 'outputParameters' are truly required; every other input has a safe default.",
-    "Edges use {'from': node_id, 'to': node_id}. Wire Start -> this node -> your next node.",
-    "Keep session_id stable across turns for memory; thread_id may rotate when memory_mode is 'auto' or 'db'."
   ]
 }
